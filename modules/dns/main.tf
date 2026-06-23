@@ -6,6 +6,11 @@ locals {
 resource "aws_route53_zone" "private" {
   name = var.zone_name
 
+  # When true, the provider deletes every record (except NS/SOA) before deleting
+  # the zone, so `terraform destroy` never fails with HostedZoneNotEmpty — even
+  # if records were added out of band.
+  force_destroy = var.force_destroy
+
   vpc {
     vpc_id = var.vpc_id
   }

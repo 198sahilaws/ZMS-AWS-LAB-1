@@ -37,3 +37,9 @@ variable "record_ttl" {
   type        = number
   default     = 300
 }
+
+variable "force_destroy" {
+  description = "Delete all records in the zone before destroying it (prevents HostedZoneNotEmpty on terraform destroy)."
+  type        = bool
+  default     = true
+}

@@ -127,6 +127,12 @@ variable "private_dns_zone_name" {
   default     = "internal.example.local"
 }
 
+variable "private_dns_force_destroy" {
+  description = "Delete all records before destroying the private hosted zone (avoids HostedZoneNotEmpty on terraform destroy)."
+  type        = bool
+  default     = true
+}
+
 #############################
 # SSH key pair
 #############################

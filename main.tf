@@ -236,11 +236,12 @@ module "compute_windows" {
 module "dns" {
   source = "./modules/dns"
 
-  name_prefix = module.naming.base_name
-  suffix      = local.stack_suffix
-  tags        = module.naming.tags
-  vpc_id      = module.network.vpc_id
-  zone_name   = var.private_dns_zone_name
+  name_prefix   = module.naming.base_name
+  suffix        = local.stack_suffix
+  tags          = module.naming.tags
+  vpc_id        = module.network.vpc_id
+  zone_name     = var.private_dns_zone_name
+  force_destroy = var.private_dns_force_destroy
 
   # Merge bastion + all Linux + all Windows hosts. Adding an instance to the
   # compute maps auto-registers a record here.
