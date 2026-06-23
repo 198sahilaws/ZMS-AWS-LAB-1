@@ -1,0 +1,83 @@
+###############################################################################
+# Example tfvars. Copy to terraform.tfvars and edit. The stack is deployable
+# with ONLY this file edited — no source changes are needed to customise names,
+# tags, sizes, or CIDRs.
+###############################################################################
+
+# ---- Naming & tagging -------------------------------------------------------
+name_prefix          = "zms"
+environment          = "dev"
+project              = "zms-aws-lab"
+owner                = "platform-team"
+cost_center          = "engineering"
+random_suffix_length = 6 # 5-7; random lowercase-alphanumeric string appended to every name
+
+# Arbitrary extra tags merged onto the standard set and applied everywhere.
+tags = {
+  Team       = "infra"
+  Compliance = "internal"
+}
+
+# ---- Region & network -------------------------------------------------------
+aws_region = "us-east-1"
+vpc_cidr   = "10.0.0.0/16"
+
+# Leave empty to auto-select the first two AZs in the region.
+availability_zones = []
+
+# Leave subnet CIDR lists empty to derive them from vpc_cidr via cidrsubnet().
+public_subnet_cidrs      = []
+private_app_subnet_cidrs = []
+private_eks_subnet_cidrs = []
+management_subnet_cidrs  = [] # private mgmt tier; hosts the Ansible control node
+
+enable_nat_gateway = true
+single_nat_gateway = false # set true to save cost in non-prod (one shared NAT)
+
+# ---- DNS --------------------------------------------------------------------
+private_dns_zone_name = "internal.example.local"
+
+# ---- Bastion (REQUIRED: restrict to your admin IP, never 0.0.0.0/0) ---------
+bastion_instance_type = "t3.micro"
+bastion_allowed_cidrs = ["203.0.113.10/32"] # <-- replace with YOUR admin IP /32
+
+# ---- Encryption -------------------------------------------------------------
+create_kms_key = true
+
+# ---- Linux compute ----------------------------------------------------------
+linux_instance_type = "t3.medium"
+# Defaults already provide Amazon Linux 2023 + Ubuntu 24.04. Override here to add/change.
+# linux_instances = {
+#   amazon = { ami_ssm_parameter = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64", instance_type = "t3.medium" }
+#   ubuntu = { ami_ssm_parameter = "/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id", instance_type = "t3.medium" }
+# }
+
+# ---- Windows compute --------------------------------------------------------
+windows_instance_type  = "t3.large"
+windows_admin_username = "zmsadmin"
+# Supply via env instead of committing: export TF_VAR_windows_admin_password='...'
+windows_admin_password = "ChangeMe-Str0ng!Passw0rd"
+
+# ---- Software management (Ansible) -----------------------------------------
+# Software is managed out-of-band by Ansible. Optionally point instances at an
+# S3 bucket of artifacts (deb/rpm/MSI) that Ansible can fetch; grants scoped
+# read-only S3 access. Leave empty to skip the S3 policy.
+artifact_bucket = ""
+
+# ---- Ansible control node --------------------------------------------------
+enable_ansible_control        = true
+ansible_control_instance_type = "t3.medium"
+ansible_repo_volume_size      = 20
+
+# Optional ansible-pull source (leave empty to skip the reconverge cron).
+control_repo_url    = "" # e.g. "https://github.com/your-org/ansible-control.git"
+control_repo_branch = "main"
+reconverge_minutes  = 15
+
+# Mirror the generated SSH private key into Secrets Manager so the control node
+# can fetch it at run time. Set false to populate the secret out of band instead.
+mirror_ssh_key_to_secret = true
+
+# Populate the WinRM secret from windows_admin_username/password. Default false
+# keeps the container empty so you set the value out of band.
+set_winrm_secret = false

@@ -1,0 +1,27 @@
+#cloud-config
+package_update: true
+package_upgrade: false
+packages:
+  - software-properties-common
+  - git
+  - python3-pip
+
+write_files:
+  - path: /etc/profile.d/ansible-repos.sh
+    content: |
+      export ANSIBLE_REPOS=/srv/repos
+
+runcmd:
+  # Ensure the SSM agent is running (private node reachable via Session Manager).
+  - [ bash, -c, "systemctl enable --now snap.amazon-ssm-agent.amazon-ssm-agent.service amazon-ssm-agent 2>/dev/null || true" ]
+  # Install ansible-core if the distro package is unavailable.
+  - [ bash, -c, "command -v ansible >/dev/null 2>&1 || (add-apt-repository --yes --update ppa:ansible/ansible && apt-get install -y ansible)" ]
+  # Prepare and mount the persistent repo volume (Nitro: /dev/nvme1n1).
+  - [ bash, -c, "mkdir -p /srv/repos" ]
+  - [ bash, -c, "for d in /dev/nvme1n1 /dev/xvdf /dev/sdf; do [ -b \"$d\" ] && DEV=$d && break; done; if [ -n \"$DEV\" ] && ! blkid \"$DEV\"; then mkfs.ext4 -L repos \"$DEV\"; fi" ]
+  - [ bash, -c, "grep -q '/srv/repos' /etc/fstab || echo 'LABEL=repos /srv/repos ext4 defaults,nofail 0 2' >> /etc/fstab" ]
+  - [ bash, -c, "mount -a || true" ]
+%{ if control_repo_url != "" ~}
+  # Periodic ansible-pull reconverge from the control repo.
+  - [ bash, -c, "( crontab -l 2>/dev/null; echo '*/${reconverge_minutes} * * * * ansible-pull -U ${control_repo_url} -C ${control_repo_branch} >> /var/log/ansible-pull.log 2>&1' ) | crontab -" ]
+%{ endif ~}

@@ -1,0 +1,50 @@
+# ── Terraform ───────────────────────────────────────────────────────────────
+# Local provider/module cache and plugins
+**/.terraform/*
+.terraform/
+.terraform.tfstate.lock.info
+
+# State files (this stack uses the LOCAL backend — never commit state)
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+terraform.tfstate.d/
+
+# Plan output / crash logs
+*.tfplan
+*.tfplan.*
+crash.log
+crash.*.log
+
+# Variable files — may contain secrets (windows_admin_password, etc.).
+# Keep the committed example; ignore everything else.
+*.tfvars
+*.tfvars.json
+!terraform.tfvars.example
+
+# CLI config files that can hold credentials
+.terraformrc
+terraform.rc
+
+# Keep the dependency lock file tracked:
+# (do NOT ignore .terraform.lock.hcl — it pins provider versions for the team)
+
+# ── Generated secrets / keys ────────────────────────────────────────────────
+# The keypair module writes the private key to ./<name>.pem (0600)
+*.pem
+*.ppk
+*.key
+id_rsa
+id_ed25519
+ansible_ed25519
+
+# ── OS / editor cruft ───────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.iml
