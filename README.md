@@ -81,8 +81,8 @@ are needed to customise names, tags, sizes, CIDRs, instances, or the control pla
                  │ SSH                    │ SSH / RDP
    ┌─────────────┴───────────┐ ┌──────────┴──────────────┐
    │ Private app subnet AZ-a │ │ Private app subnet AZ-b │  no public IPs
-   │  • Amazon Linux 2023    │ │  • Ubuntu 24.04         │  IMDSv2, encrypted EBS
-   │  • Windows 2019         │ │  • Windows 2022         │
+   │  Amazon Linux / Ubuntu  │ │  Amazon Linux / Ubuntu  │  IMDSv2, encrypted EBS
+   │  Windows  ◀── round-robin server counts across AZs ──▶ │
    └─────────────────────────┘ └─────────────────────────┘
    ┌─────────────────────────┐ ┌─────────────────────────┐
    │ Private EKS subnet AZ-a │ │ Private EKS subnet AZ-b │  tagged for future EKS
@@ -201,7 +201,7 @@ root ── naming ──▶ base_name + merged tags (single source of truth)
 cp terraform.tfvars.example terraform.tfvars
 
 # Minimum edits required before apply:
-#   bastion_allowed_cidrs  = ["YOUR.ADMIN.IP/32"]   # never 0.0.0.0/0 (enforced)
+#   bastion_allowed_cidrs  = ["YOUR.ADMIN.IP/32"]   # 0.0.0.0/0 allowed but discouraged
 #   windows_admin_password = "..."                  # or export TF_VAR_windows_admin_password
 
 terraform init
@@ -271,8 +271,9 @@ functional and are **not** suffixed (only resource names / `Name` tags are).
 - **Private by default.** Linux, Windows, and the Ansible control node have no public
   IPs and live in private subnets.
 - **Single SSH entry point.** Only the bastion is internet-facing; its SSH ingress is
-  locked to `bastion_allowed_cidrs`. A variable validation **rejects `0.0.0.0/0`** and
-  requires at least one CIDR.
+  locked to `bastion_allowed_cidrs`. A variable validation **requires at least one
+  CIDR**; `0.0.0.0/0` is permitted (for roaming users) but exposes SSH to the internet,
+  so a specific admin `/32` is strongly preferred.
 - **Least-privilege SGs.** Linux accepts SSH only from the bastion and (when present)
   the control node SG. Windows accepts RDP from the bastion/VPC and WinRM only from the
   control node SG — never the internet.
@@ -358,33 +359,40 @@ It is the jump host into the private estate (Linux SSH, Windows RDP, control-nod
 
 Both compute modules launch into the private application subnets, with no public IPs,
 IMDSv2 enforced, KMS-encrypted root volumes, and the SSM instance profile. AMIs resolve
-from SSM public parameters. Instances are defined by a map, so adding one is a tfvars
-edit.
+from SSM public parameters.
 
-**Linux (`compute-linux`)** — defaults to two hosts:
+### Server counts & round-robin AZ placement
 
-| Key | OS | AMI SSM parameter | Default type |
+The number of servers is controlled by **three count variables**, one per OS:
+
+| Variable | OS | Default AMI | Default count |
 |---|---|---|---|
-| `amazon` | Amazon Linux 2023 | `/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64` | `t3.medium` |
-| `ubuntu` | Ubuntu 24.04 | `/aws/service/canonical/ubuntu/server/24.04/.../ami-id` | `t3.medium` |
+| `amazon_linux_server_count` | Amazon Linux 2023 | `amazon_linux_ami_ssm_parameter` | `1` |
+| `ubuntu_server_count` | Ubuntu 24.04 | `ubuntu_ami_ssm_parameter` | `1` |
+| `windows_server_count` | Windows Server 2022 | `windows_ami_ssm_parameter` | `1` |
 
-SG: SSH (22) from the bastion SG, and from the control node SG when present.
+Each OS pool is distributed across the chosen availability zones using **round
+robin**: server *i* of a pool lands in AZ `i % number_of_azs` (the private app
+subnets are one-per-AZ). Pools are placed independently — each starts at the first
+AZ. For example, with two AZs and `amazon_linux_server_count = 3`:
 
-**Windows (`compute-windows`)** — defaults to two hosts:
+```
+amazon-1 → AZ-a    amazon-2 → AZ-b    amazon-3 → AZ-a
+```
 
-| Key | OS | AMI SSM parameter | Default type |
-|---|---|---|---|
-| `win2019` | Windows Server 2019 | `/aws/service/ami-windows-latest/Windows_Server-2019-English-Full-Base` | `t3.large` |
-| `win2022` | Windows Server 2022 | `/aws/service/ami-windows-latest/Windows_Server-2022-English-Full-Base` | `t3.large` |
+Instances are named `…-linux-amazon-1`, `…-linux-ubuntu-2`, `…-windows-1`, etc.;
+DNS records follow as `linux-amazon-1`, `win-1`, and so on. The number of AZs is set
+by `availability_zones` / `az_count`.
 
-SG: RDP (3389) from the bastion SG and VPC range; WinRM HTTPS (5986) from the control
-node SG when present. First-boot `user_data` ensures the SSM agent, sets the local admin
-account from `windows_admin_username`/`windows_admin_password`, and stands up a WinRM
-HTTPS listener (self-signed cert).
+**Linux SG** — SSH (22) from the bastion SG, and from the control node SG when present.
+
+**Windows SG** — RDP (3389) from the bastion SG and VPC range; WinRM HTTPS (5986) from
+the control node SG when present. First-boot `user_data` ensures the SSM agent, sets the
+local admin account from `windows_admin_username`/`windows_admin_password`, and stands
+up a WinRM HTTPS listener (self-signed cert).
 
 Every instance carries the discovery tags **`OS`** (`linux`/`windows`), **`Role`**
-(per-instance, overridable via the `role` field on each map entry), and **`Environment`**
-(from the standard tag set).
+(`amazon`/`ubuntu`/`windows`), and **`Environment`** (from the standard tag set).
 
 ---
 
@@ -544,11 +552,15 @@ aws ssm start-session --target "$CTRL_ID"
 | Variable | Type | Default | Description |
 |---|---|---|---|
 | `bastion_instance_type` | string | `t3.micro` | Bastion size. |
-| `bastion_allowed_cidrs` | list(string) | — (**required**) | SSH source CIDRs; `0.0.0.0/0` rejected. |
-| `linux_instance_type` | string | `t3.medium` | Default Linux size. |
-| `linux_instances` | map(object) | Amazon Linux + Ubuntu | Linux instance definitions. |
-| `windows_instance_type` | string | `t3.large` | Default Windows size. |
-| `windows_instances` | map(object) | Windows 2019 + 2022 | Windows instance definitions. |
+| `bastion_allowed_cidrs` | list(string) | — (**required**) | SSH source CIDRs (≥1); `0.0.0.0/0` allowed but discouraged. |
+| `amazon_linux_server_count` | number | `1` | Number of Amazon Linux servers (round-robined across AZs). |
+| `ubuntu_server_count` | number | `1` | Number of Ubuntu servers (round-robined across AZs). |
+| `windows_server_count` | number | `1` | Number of Windows servers (round-robined across AZs). |
+| `linux_instance_type` | string | `t3.medium` | Size for all Linux servers. |
+| `windows_instance_type` | string | `t3.large` | Size for all Windows servers. |
+| `amazon_linux_ami_ssm_parameter` | string | AL2023 SSM param | Amazon Linux AMI source. |
+| `ubuntu_ami_ssm_parameter` | string | Ubuntu 24.04 SSM param | Ubuntu AMI source. |
+| `windows_ami_ssm_parameter` | string | Windows 2022 SSM param | Windows AMI source. |
 | `windows_admin_username` | string (sensitive) | `zmsadmin` | Local admin account. |
 | `windows_admin_password` | string (sensitive) | — (**required**) | Local admin password. |
 
@@ -566,9 +578,9 @@ aws ssm start-session --target "$CTRL_ID"
 | `mirror_ssh_key_to_secret` | bool | `true` | Mirror generated SSH key into its secret. |
 | `set_winrm_secret` | bool | `false` | Populate WinRM secret from admin creds. |
 
-The `linux_instances` / `windows_instances` object shape:
-`{ ami_ssm_parameter = string, instance_type = optional(string), root_volume_size =
-optional(number), role = optional(string)[, os = optional(string)] }`.
+Server counts default to `1` per OS; set them to `0` to deploy none of that OS.
+With `N` servers and `A` AZs, server `i` (0-indexed within its OS pool) is placed in
+AZ `i % A`.
 
 ---
 
@@ -623,10 +635,14 @@ A condensed view of each module's variables (root passes these via the wiring in
   `iam_instance_profile`, `bastion_allowed_cidrs`, `associate_eip`.
 - **compute-linux** — `name_prefix`, `suffix`, `tags`, `vpc_id`, `vpc_cidr`,
   `subnet_ids`, `key_name`, `iam_instance_profile`, `bastion_security_group_id`,
-  `control_security_group_id`, `kms_key_id`, `default_instance_type`,
-  `default_root_volume_size`, `instances`.
-- **compute-windows** — as Linux, plus `windows_admin_username`, `windows_admin_password`
-  (no `key_name`).
+  `control_security_group_id`, `kms_key_id`, `instance_type`, `root_volume_size`,
+  `amazon_linux_server_count`, `ubuntu_server_count`, `amazon_linux_ami_ssm_parameter`,
+  `ubuntu_ami_ssm_parameter`.
+- **compute-windows** — `name_prefix`, `suffix`, `tags`, `vpc_id`, `vpc_cidr`,
+  `subnet_ids`, `iam_instance_profile`, `bastion_security_group_id`,
+  `control_security_group_id`, `kms_key_id`, `instance_type`, `root_volume_size`,
+  `windows_server_count`, `windows_ami_ssm_parameter`, `windows_admin_username`,
+  `windows_admin_password`.
 - **dns** — `name_prefix`, `suffix`, `tags`, `vpc_id`, `zone_name`, `instance_records`,
   `record_ttl`.
 
@@ -640,7 +656,9 @@ A condensed view of each module's variables (root passes these via the wiring in
 | Retag everything | `tags`, `owner`, `project`, `cost_center` |
 | Change network size/layout | `vpc_cidr`, `*_subnet_cidrs`, `availability_zones` |
 | Cheaper non-prod networking | `single_nat_gateway = true` |
-| Add/resize Linux or Windows hosts | `linux_instances`, `windows_instances`, `*_instance_type` |
+| Add/remove servers per OS | `amazon_linux_server_count`, `ubuntu_server_count`, `windows_server_count` |
+| Resize servers / pick AMIs | `linux_instance_type`, `windows_instance_type`, `*_ami_ssm_parameter` |
+| Spread servers over more AZs | `availability_zones` / `az_count` (round-robin follows automatically) |
 | Tag a host with a role | add `role = "web"` to its `*_instances` entry |
 | Lock down / open SSH source | `bastion_allowed_cidrs` |
 | Disable the Ansible control node | `enable_ansible_control = false` |
@@ -700,7 +718,7 @@ Notes:
 
 | Symptom | Likely cause / fix |
 |---|---|
-| `apply` fails on `bastion_allowed_cidrs` | The variable is required and rejects `0.0.0.0/0`; set your admin `/32`. |
+| `apply` fails on `bastion_allowed_cidrs` | Required with ≥1 CIDR; set your admin `/32` (or `0.0.0.0/0` to allow any source). |
 | `apply` fails on `windows_admin_password` | Required with no default; set it or export `TF_VAR_windows_admin_password`. |
 | Can't reach a private host | Connect through the bastion (`ProxyJump`) or Session Manager; private hosts have no public IP by design. |
 | WinRM auth fails from Ansible | Confirm the WinRM secret value was set out of band and the control node SG rule (5986) is present (`enable_ansible_control = true`). |

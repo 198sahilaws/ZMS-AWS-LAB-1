@@ -195,11 +195,14 @@ module "compute_linux" {
   subnet_ids                = module.network.private_app_subnet_ids
   key_name                  = module.keypair.key_name
   iam_instance_profile      = module.deployment.instance_profile_name
-  bastion_security_group_id = module.bastion.security_group_id
-  control_security_group_id = local.control_security_group_id
-  kms_key_id                = local.ebs_kms_key_id
-  default_instance_type     = var.linux_instance_type
-  instances                 = var.linux_instances
+  bastion_security_group_id      = module.bastion.security_group_id
+  control_security_group_id      = local.control_security_group_id
+  kms_key_id                     = local.ebs_kms_key_id
+  instance_type                  = var.linux_instance_type
+  amazon_linux_server_count      = var.amazon_linux_server_count
+  ubuntu_server_count            = var.ubuntu_server_count
+  amazon_linux_ami_ssm_parameter = var.amazon_linux_ami_ssm_parameter
+  ubuntu_ami_ssm_parameter       = var.ubuntu_ami_ssm_parameter
 }
 
 #############################
@@ -219,8 +222,9 @@ module "compute_windows" {
   bastion_security_group_id = module.bastion.security_group_id
   control_security_group_id = local.control_security_group_id
   kms_key_id                = local.ebs_kms_key_id
-  default_instance_type     = var.windows_instance_type
-  instances                 = var.windows_instances
+  instance_type             = var.windows_instance_type
+  windows_server_count      = var.windows_server_count
+  windows_ami_ssm_parameter = var.windows_ami_ssm_parameter
   windows_admin_username    = var.windows_admin_username
   windows_admin_password    = var.windows_admin_password
 }

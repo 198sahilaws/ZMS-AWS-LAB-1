@@ -170,13 +170,13 @@ variable "bastion_instance_type" {
 }
 
 variable "bastion_allowed_cidrs" {
-  description = "CIDRs permitted to SSH to the bastion. NO default to 0.0.0.0/0 — set to your admin IP(s)."
+  description = "CIDRs permitted to SSH to the bastion. Set to your admin IP(s); 0.0.0.0/0 is permitted (e.g. roaming users) but exposes SSH to the whole internet."
   type        = list(string)
   # Intentionally no default: deployment fails until the operator sets this.
 
   validation {
-    condition     = length(var.bastion_allowed_cidrs) > 0 && !contains(var.bastion_allowed_cidrs, "0.0.0.0/0")
-    error_message = "Set bastion_allowed_cidrs to specific admin CIDRs; 0.0.0.0/0 is not allowed."
+    condition     = length(var.bastion_allowed_cidrs) > 0
+    error_message = "Set bastion_allowed_cidrs to at least one CIDR (use a specific admin /32 where possible)."
   }
 }
 
@@ -185,29 +185,33 @@ variable "bastion_allowed_cidrs" {
 #############################
 
 variable "linux_instance_type" {
-  description = "Default instance type for Linux workloads."
+  description = "Instance type for all Linux servers (both Amazon Linux and Ubuntu)."
   type        = string
   default     = "t3.medium"
 }
 
-variable "linux_instances" {
-  description = "Map of logical name => Linux instance definition (ami_ssm_parameter, optional instance_type/root_volume_size)."
-  type = map(object({
-    ami_ssm_parameter = string
-    instance_type     = optional(string)
-    root_volume_size  = optional(number)
-    os                = optional(string, "linux")
-  }))
-  default = {
-    amazon = {
-      ami_ssm_parameter = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
-      os                = "amazon-linux"
-    }
-    ubuntu = {
-      ami_ssm_parameter = "/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id"
-      os                = "ubuntu"
-    }
-  }
+variable "amazon_linux_server_count" {
+  description = "Number of Amazon Linux servers to launch. Round-robined across the chosen AZs."
+  type        = number
+  default     = 1
+}
+
+variable "ubuntu_server_count" {
+  description = "Number of Ubuntu servers to launch. Round-robined across the chosen AZs."
+  type        = number
+  default     = 1
+}
+
+variable "amazon_linux_ami_ssm_parameter" {
+  description = "SSM public parameter resolving to the Amazon Linux AMI."
+  type        = string
+  default     = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
+}
+
+variable "ubuntu_ami_ssm_parameter" {
+  description = "SSM public parameter resolving to the Ubuntu AMI."
+  type        = string
+  default     = "/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id"
 }
 
 #############################
@@ -215,26 +219,21 @@ variable "linux_instances" {
 #############################
 
 variable "windows_instance_type" {
-  description = "Default instance type for Windows workloads."
+  description = "Instance type for all Windows servers."
   type        = string
   default     = "t3.large"
 }
 
-variable "windows_instances" {
-  description = "Map of logical name => Windows instance definition (ami_ssm_parameter, optional instance_type/root_volume_size)."
-  type = map(object({
-    ami_ssm_parameter = string
-    instance_type     = optional(string)
-    root_volume_size  = optional(number)
-  }))
-  default = {
-    win2019 = {
-      ami_ssm_parameter = "/aws/service/ami-windows-latest/Windows_Server-2019-English-Full-Base"
-    }
-    win2022 = {
-      ami_ssm_parameter = "/aws/service/ami-windows-latest/Windows_Server-2022-English-Full-Base"
-    }
-  }
+variable "windows_server_count" {
+  description = "Number of Windows servers to launch. Round-robined across the chosen AZs."
+  type        = number
+  default     = 1
+}
+
+variable "windows_ami_ssm_parameter" {
+  description = "SSM public parameter resolving to the Windows AMI (default Windows Server 2022; switch to ...2019... for 2019)."
+  type        = string
+  default     = "/aws/service/ami-windows-latest/Windows_Server-2022-English-Full-Base"
 }
 
 variable "windows_admin_username" {

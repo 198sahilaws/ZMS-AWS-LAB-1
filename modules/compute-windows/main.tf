@@ -1,6 +1,14 @@
 locals {
-  sfx           = var.suffix == "" ? "" : "-${var.suffix}"
-  instance_keys = keys(var.instances)
+  sfx      = var.suffix == "" ? "" : "-${var.suffix}"
+  az_count = length(var.subnet_ids)
+
+  # Expand the Windows count into instances, round-robining across AZ subnets:
+  # server i lands in subnet_ids[i % az_count].
+  instances = {
+    for i in range(var.windows_server_count) : tostring(i + 1) => {
+      subnet_index = i % local.az_count
+    }
+  }
 
   # First-boot PowerShell: ensure the SSM agent is running, set the local admin
   # account, and (for Ansible push) stand up a WinRM HTTPS listener on 5986.
@@ -29,12 +37,12 @@ locals {
   POWERSHELL
 }
 
+# Resolve the Windows AMI region-agnostically from its SSM parameter.
 data "aws_ssm_parameter" "ami" {
-  for_each = var.instances
-  name     = each.value.ami_ssm_parameter
+  name = var.windows_ami_ssm_parameter
 }
 
-# Windows workloads accept RDP only from the bastion SG and the VPC range.
+# Windows workloads accept RDP from the bastion/VPC and WinRM from the control SG.
 resource "aws_security_group" "windows" {
   name        = "${var.name_prefix}-windows-sg${local.sfx}"
   description = "Windows workloads: RDP from bastion/VPC only, never the internet"
@@ -88,11 +96,11 @@ resource "aws_security_group" "windows" {
 }
 
 resource "aws_instance" "windows" {
-  for_each = var.instances
+  for_each = local.instances
 
-  ami                    = data.aws_ssm_parameter.ami[each.key].value
-  instance_type          = coalesce(each.value.instance_type, var.default_instance_type)
-  subnet_id              = element(var.subnet_ids, index(local.instance_keys, each.key))
+  ami                    = data.aws_ssm_parameter.ami.value
+  instance_type          = var.instance_type
+  subnet_id              = var.subnet_ids[each.value.subnet_index]
   vpc_security_group_ids = [aws_security_group.windows.id]
   iam_instance_profile   = var.iam_instance_profile
   user_data              = local.user_data
@@ -104,7 +112,7 @@ resource "aws_instance" "windows" {
   }
 
   root_block_device {
-    volume_size = coalesce(each.value.root_volume_size, var.default_root_volume_size)
+    volume_size = var.root_volume_size
     volume_type = "gp3"
     encrypted   = true
     kms_key_id  = var.kms_key_id
@@ -114,6 +122,6 @@ resource "aws_instance" "windows" {
   tags = merge(var.tags, {
     Name = "${var.name_prefix}-windows-${each.key}${local.sfx}"
     OS   = "windows"
-    Role = coalesce(each.value.role, "windows-workload")
+    Role = "windows"
   })
 }

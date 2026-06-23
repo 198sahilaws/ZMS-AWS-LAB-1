@@ -86,8 +86,11 @@ resource "aws_iam_role_policy" "inventory" {
 }
 
 # Scoped read of exactly the secrets the control node needs.
+# Gated on the (plan-known) `attach_secrets_policy` flag — the secret ARNs are
+# resolved from the secrets module and are unknown until apply, so they cannot
+# drive `count`.
 data "aws_iam_policy_document" "secrets" {
-  count = length(local.readable_secret_arns) > 0 ? 1 : 0
+  count = var.attach_secrets_policy ? 1 : 0
 
   statement {
     sid       = "SecretsRead"
@@ -97,7 +100,7 @@ data "aws_iam_policy_document" "secrets" {
 }
 
 resource "aws_iam_role_policy" "secrets" {
-  count  = length(local.readable_secret_arns) > 0 ? 1 : 0
+  count  = var.attach_secrets_policy ? 1 : 0
   name   = "${var.name_prefix}-secrets-read${local.sfx}"
   role   = aws_iam_role.control.id
   policy = data.aws_iam_policy_document.secrets[0].json

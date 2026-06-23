@@ -26,7 +26,7 @@ variable "vpc_cidr" {
 }
 
 variable "subnet_ids" {
-  description = "Private EC2 subnet IDs. Instances are distributed across these by index."
+  description = "Private EC2 subnet IDs, one per AZ. Servers are round-robined across these (i.e. across AZs)."
   type        = list(string)
 }
 
@@ -58,39 +58,48 @@ variable "kms_key_id" {
   default     = null
 }
 
-variable "default_instance_type" {
-  description = "Instance type used when an instance entry does not override it."
+variable "instance_type" {
+  description = "Instance type for all Linux servers (both Amazon Linux and Ubuntu)."
   type        = string
   default     = "t3.medium"
 }
 
-variable "default_root_volume_size" {
-  description = "Root volume size in GiB used when an instance entry does not override it."
+variable "root_volume_size" {
+  description = "Root volume size in GiB for Linux servers."
   type        = number
   default     = 30
 }
 
-variable "instances" {
-  description = <<-EOT
-    Map of logical name => Linux instance definition. Each instance becomes a
-    private EC2 host plus a private-DNS A record. AMIs are resolved region-agnostically
-    from SSM public parameters.
-  EOT
-  type = map(object({
-    ami_ssm_parameter = string
-    instance_type     = optional(string)
-    root_volume_size  = optional(number)
-    os                = optional(string, "linux")
-    role              = optional(string)
-  }))
-  default = {
-    amazon = {
-      ami_ssm_parameter = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
-      os                = "amazon-linux"
-    }
-    ubuntu = {
-      ami_ssm_parameter = "/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id"
-      os                = "ubuntu"
-    }
+variable "amazon_linux_server_count" {
+  description = "Number of Amazon Linux servers to launch (round-robined across AZs)."
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = var.amazon_linux_server_count >= 0
+    error_message = "amazon_linux_server_count must be >= 0."
   }
+}
+
+variable "ubuntu_server_count" {
+  description = "Number of Ubuntu servers to launch (round-robined across AZs)."
+  type        = number
+  default     = 1
+
+  validation {
+    condition     = var.ubuntu_server_count >= 0
+    error_message = "ubuntu_server_count must be >= 0."
+  }
+}
+
+variable "amazon_linux_ami_ssm_parameter" {
+  description = "SSM public parameter resolving to the Amazon Linux AMI."
+  type        = string
+  default     = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
+}
+
+variable "ubuntu_ami_ssm_parameter" {
+  description = "SSM public parameter resolving to the Ubuntu AMI."
+  type        = string
+  default     = "/aws/service/canonical/ubuntu/server/24.04/stable/current/amd64/hvm/ebs-gp3/ami-id"
 }

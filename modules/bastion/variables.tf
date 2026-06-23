@@ -66,12 +66,12 @@ variable "iam_instance_profile" {
 }
 
 variable "bastion_allowed_cidrs" {
-  description = "CIDRs permitted to SSH (22) to the bastion. Must never be 0.0.0.0/0."
+  description = "CIDRs permitted to SSH (22) to the bastion. 0.0.0.0/0 is allowed but exposes SSH to the internet; prefer a specific admin /32."
   type        = list(string)
 
   validation {
-    condition     = !contains(var.bastion_allowed_cidrs, "0.0.0.0/0")
-    error_message = "bastion_allowed_cidrs must not contain 0.0.0.0/0; restrict SSH to known admin CIDRs."
+    condition     = length(var.bastion_allowed_cidrs) > 0
+    error_message = "Provide at least one CIDR for bastion_allowed_cidrs."
   }
 }
 

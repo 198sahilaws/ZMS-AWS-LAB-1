@@ -1,15 +1,37 @@
 locals {
-  sfx           = var.suffix == "" ? "" : "-${var.suffix}"
-  instance_keys = keys(var.instances)
+  sfx      = var.suffix == "" ? "" : "-${var.suffix}"
+  az_count = length(var.subnet_ids)
+
+  # One pool per Linux OS, each with its own count and AMI.
+  pools = {
+    amazon = { count = var.amazon_linux_server_count, ami = var.amazon_linux_ami_ssm_parameter }
+    ubuntu = { count = var.ubuntu_server_count, ami = var.ubuntu_ami_ssm_parameter }
+  }
+
+  # Expand each pool into N instances, round-robining the pool index across the
+  # AZ subnets: server i of a pool lands in subnet_ids[i % az_count].
+  pool_maps = [
+    for pool, cfg in local.pools : {
+      for i in range(cfg.count) : "${pool}-${i + 1}" => {
+        ami_param    = cfg.ami
+        role         = pool
+        subnet_index = i % local.az_count
+      }
+    }
+  ]
+  instances = merge(local.pool_maps...)
+
+  # Distinct AMI parameters actually referenced (deduplicated).
+  ami_params = toset([for inst in values(local.instances) : inst.ami_param])
 }
 
-# Resolve each instance's AMI region-agnostically from its SSM parameter.
+# Resolve each referenced AMI region-agnostically from its SSM parameter.
 data "aws_ssm_parameter" "ami" {
-  for_each = var.instances
-  name     = each.value.ami_ssm_parameter
+  for_each = local.ami_params
+  name     = each.value
 }
 
-# Linux workloads accept SSH only from the bastion SG. No public ingress.
+# Linux workloads accept SSH from the bastion SG and (when set) the control SG.
 resource "aws_security_group" "linux" {
   name        = "${var.name_prefix}-linux-sg${local.sfx}"
   description = "Linux workloads: SSH from bastion only, egress within VPC"
@@ -43,9 +65,6 @@ resource "aws_security_group" "linux" {
     cidr_blocks = [var.vpc_cidr]
   }
 
-  # Allow HTTPS egress to AWS service prefix lists is covered by the VPC-CIDR
-  # egress because interface endpoints live inside the VPC. NAT egress for
-  # OS package mirrors:
   egress {
     description = "HTTPS egress for package mirrors via NAT"
     from_port   = 443
@@ -58,12 +77,11 @@ resource "aws_security_group" "linux" {
 }
 
 resource "aws_instance" "linux" {
-  for_each = var.instances
+  for_each = local.instances
 
-  ami           = data.aws_ssm_parameter.ami[each.key].value
-  instance_type = coalesce(each.value.instance_type, var.default_instance_type)
-  # Spread instances across the available private subnets by index.
-  subnet_id              = element(var.subnet_ids, index(local.instance_keys, each.key))
+  ami                    = data.aws_ssm_parameter.ami[each.value.ami_param].value
+  instance_type          = var.instance_type
+  subnet_id              = var.subnet_ids[each.value.subnet_index]
   key_name               = var.key_name
   vpc_security_group_ids = [aws_security_group.linux.id]
   iam_instance_profile   = var.iam_instance_profile
@@ -75,7 +93,7 @@ resource "aws_instance" "linux" {
   }
 
   root_block_device {
-    volume_size = coalesce(each.value.root_volume_size, var.default_root_volume_size)
+    volume_size = var.root_volume_size
     volume_type = "gp3"
     encrypted   = true
     kms_key_id  = var.kms_key_id
@@ -91,6 +109,6 @@ resource "aws_instance" "linux" {
   tags = merge(var.tags, {
     Name = "${var.name_prefix}-linux-${each.key}${local.sfx}"
     OS   = "linux"
-    Role = coalesce(each.value.role, "linux-workload")
+    Role = each.value.role
   })
 }

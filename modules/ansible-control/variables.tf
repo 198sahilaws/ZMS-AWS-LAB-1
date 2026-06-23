@@ -70,6 +70,12 @@ variable "kms_key_id" {
   default     = null
 }
 
+variable "attach_secrets_policy" {
+  description = "Attach the scoped secretsmanager:GetSecretValue policy for ssh_secret_arn/winrm_secret_arn. Plan-known flag (the ARNs themselves resolve at apply time). Set false for standalone use without secrets."
+  type        = bool
+  default     = true
+}
+
 variable "ssh_secret_arn" {
   description = "ARN of the SSH private-key secret the control node may read."
   type        = string

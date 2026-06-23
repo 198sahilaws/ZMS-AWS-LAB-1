@@ -15,7 +15,9 @@ resource "aws_secretsmanager_secret" "ssh" {
 }
 
 resource "aws_secretsmanager_secret_version" "ssh" {
-  count = var.set_ssh_secret && var.ssh_private_key != "" ? 1 : 0
+  # Gate only on the (plan-known) flag. The key material comes from the keypair
+  # module and is unknown until apply, so it must not appear in `count`.
+  count = var.set_ssh_secret ? 1 : 0
 
   secret_id     = aws_secretsmanager_secret.ssh.id
   secret_string = var.ssh_private_key
