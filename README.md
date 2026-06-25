@@ -111,7 +111,7 @@ root ── naming ──▶ base_name + merged tags (single source of truth)
      ├─ network ──▶ VPC, IGW, 2× NAT, public/app/eks/management subnets, route tables, VPC endpoints
      ├─ keypair ──▶ TLS key pair + aws_key_pair + local .pem (bastion + all Linux hosts)
      ├─ deployment ▶ instance IAM role/profile (SSM core for Session Manager access)
-     ├─ secrets ──▶ Secrets Manager containers (Ansible SSH key, WinRM credential)
+     ├─ secrets ──▶ one consolidated Secrets Manager secret (JSON: SSH key + WinRM account)
      ├─ ansible-control ▶ control node in the management subnet: SG, IAM, repo EBS
      ├─ bastion ──▶ Ubuntu jump host in a public subnet (only SSH ingress)
      ├─ compute-linux ▶ Amazon Linux + Ubuntu, private, SSH from bastion + control SGs
@@ -139,7 +139,7 @@ root ── naming ──▶ base_name + merged tags (single source of truth)
     ├── dns/                # Route 53 private hosted zone + dynamic A records
     ├── keypair/            # TLS key pair + aws_key_pair + local .pem (+ optional SSM)
     ├── deployment/         # instance IAM role/profile (SSM core + optional S3 read)
-    ├── secrets/            # Secrets Manager containers (SSH key, WinRM credential)
+    ├── secrets/            # one consolidated Secrets Manager secret (SSH key + WinRM JSON)
     ├── ansible-control/    # private Ansible control node + cloud-init.yaml
     ├── bastion/            # Ubuntu bastion (single SSH entry point)
     ├── compute-linux/      # Amazon Linux + Ubuntu workloads
@@ -156,7 +156,7 @@ root ── naming ──▶ base_name + merged tags (single source of truth)
 | `network` | VPC, internet gateway, per-AZ NAT, four subnet tiers, route tables, VPC endpoints. | `aws_vpc`, `aws_internet_gateway`, `aws_subnet` ×4 tiers, `aws_eip`/`aws_nat_gateway`, `aws_route_table`/`aws_route`, `aws_vpc_endpoint` (interface + s3), endpoint SG |
 | `keypair` | Generates an SSH key pair; writes the private key locally; optional SSM mirror. | `tls_private_key`, `aws_key_pair`, `local_sensitive_file`, optional `aws_ssm_parameter` |
 | `deployment` | IAM instance profile for managed hosts: SSM core (+ scoped S3 read). | `aws_iam_role`, `aws_iam_role_policy_attachment`, optional `aws_iam_role_policy`, `aws_iam_instance_profile` |
-| `secrets` | Secrets Manager containers for the Ansible SSH key and WinRM credential. | `aws_secretsmanager_secret` ×2, optional `aws_secretsmanager_secret_version` ×2 |
+| `secrets` | One consolidated Secrets Manager secret (JSON: SSH key + WinRM account). | `aws_secretsmanager_secret`, optional `aws_secretsmanager_secret_version` |
 | `ansible-control` | Private control node + IAM (EC2 inventory + secrets read + SSM core) + repo EBS. | `aws_security_group`, `aws_iam_role`/policies/profile, `aws_instance`, `aws_ebs_volume` + attachment |
 | `bastion` | Ubuntu jump host in a public subnet; the only public SSH ingress. | `aws_security_group`, `aws_instance`, `aws_eip` |
 | `compute-linux` | Amazon Linux 2023 + Ubuntu 24.04 workloads, private. | `aws_security_group`, `aws_instance` (for_each) |
@@ -209,8 +209,8 @@ terraform plan
 terraform apply
 ```
 
-After apply, set the WinRM secret value out of band (see
-[Ansible control node](#ansible-control-node--software-management)).
+After apply, the single consolidated Ansible credentials secret is already populated
+(SSH key + WinRM account) — see [Ansible control node](#ansible-control-node--software-management).
 
 ---
 
@@ -407,16 +407,20 @@ keeps hosts reachable via Session Manager with no open ports, independent of Ans
 
 ## Secrets
 
-The `secrets` module creates Secrets Manager **containers** for credentials so plaintext
-never has to be authored in code:
+The `secrets` module creates **one consolidated Secrets Manager secret per deployment**
+(`<base>/ansible-credentials-<suffix>`) whose value is a JSON document holding all
+Ansible credentials:
 
-- **SSH private key** (`<base>/ansible-ssh-private-key-<suffix>`) — populated by
-  mirroring the generated key when `mirror_ssh_key_to_secret = true` (default).
-- **WinRM credential** (`<base>/winrm-credential-<suffix>`) — an empty container by
-  default (`set_winrm_secret = false`); set the value out of band, or flip the flag to
-  populate it from `windows_admin_username`/`windows_admin_password`.
+```json
+{ "ssh_private_key": "<PEM>", "winrm_username": "...", "winrm_password": "...", "provision_key": "<nonce>" }
+```
 
-`recovery_window_in_days` (default 7) controls delete behaviour.
+The `ssh_private_key` is mirrored from the generated key pair, the WinRM fields come
+from `windows_admin_username`/`windows_admin_password`, and `provision_key` is an
+arbitrary provisioning nonce (`var.provision_key`) — so the bundle is self-contained.
+`populate_ansible_secret` (default `true`) writes the value; set it `false` to create an
+empty container and set the JSON out of band. `recovery_window_in_days` (default 7)
+controls delete behaviour.
 
 ---
 
@@ -435,15 +439,14 @@ plus everything a push-based flow needs (`enable_ansible_control`, default `true
   (it carries `AmazonSSMManagedInstanceCore`).
 - **Dynamic inventory + secrets IAM.** A dedicated role grants `ec2:Describe*` (for the
   `amazon.aws.aws_ec2` inventory plugin) and `secretsmanager:GetSecretValue` scoped to
-  exactly the two secret ARNs — separate from the managed-hosts SSM profile.
-- **Build-time Secrets Manager handoff.** The two Secrets Manager containers (SSH key +
-  WinRM credential) are created **before** the control node (`depends_on = [module.secrets]`),
-  and Terraform injects their names/ARNs + region into the node via `user-data`. `cloud-init`
-  writes `/etc/ansible/secrets.env` (shell-sourceable) and `/etc/ansible/secret_vars.yml`
-  (an Ansible vars file), so playbooks resolve the secrets with no hardcoded IDs — e.g.
-  `ansible-playbook -e @/etc/ansible/secret_vars.yml …`. This deliberately couples the
-  control node's provisioning to those secret values (a legitimate cross-machine handoff,
-  since Terraform builds the consumer).
+  exactly the single secret ARN — separate from the managed-hosts SSM profile.
+- **Build-time Secrets Manager handoff.** The one consolidated secret is created **before**
+  the control node (`depends_on = [module.secrets]`), and Terraform injects its name/ARN +
+  region into the node via `user-data`. `cloud-init` writes `/etc/ansible/secrets.env`
+  (shell-sourceable) and `/etc/ansible/secret_vars.yml` (an Ansible vars file), so playbooks
+  resolve the secret with no hardcoded IDs — e.g. `ansible-playbook -e @/etc/ansible/secret_vars.yml …`.
+  This deliberately couples the control node's provisioning to those secret values (a
+  legitimate cross-machine handoff, since Terraform builds the consumer).
 - **Push paths (SG-to-SG).** Managed Linux hosts accept **SSH/22** from the control
   node SG; managed Windows hosts accept **WinRM HTTPS/5986** from it. These rules exist
   only while the control node exists.
@@ -458,20 +461,21 @@ plus everything a push-based flow needs (`enable_ansible_control`, default `true
 
 ### Bring-up order for Ansible
 
-1. `terraform apply` — creates the control node, secrets containers, IAM, and push
-   rules. The SSH secret is populated from the generated key automatically.
-2. Set the **WinRM** secret value out of band (it is an empty container by default):
+1. `terraform apply` — creates the control node, the single consolidated secret, IAM,
+   and push rules. With `populate_ansible_secret = true` (default) the secret JSON
+   (SSH key + WinRM account) is written automatically — no out-of-band step needed. To
+   rotate it later, `put-secret-value` the full JSON:
 
    ```bash
    aws secretsmanager put-secret-value \
-     --secret-id "$(terraform output -raw ansible_winrm_secret_arn)" \
-     --secret-string '{"username":"zmsadmin","password":"<pw>"}'
+     --secret-id "$(terraform output -raw ansible_secret_name)" \
+     --secret-string '{"ssh_private_key":"...","winrm_username":"zmsadmin","winrm_password":"<pw>"}'
    ```
 
-3. On the control node, the secret names/ARNs + region are already in
+2. On the control node, the secret name/ARN + region are already in
    `/etc/ansible/secrets.env` and `/etc/ansible/secret_vars.yml`. Point your `aws_ec2`
-   inventory at `tag:OS` / `tag:Role`, and fetch the SSH key / WinRM credential from
-   Secrets Manager at run time using those injected IDs.
+   inventory at `tag:OS` / `tag:Role`; the SSH key and WinRM credential are read from the
+   single secret's JSON at run time using those injected IDs.
 
 ---
 
@@ -585,8 +589,7 @@ aws ssm start-session --target "$CTRL_ID"
 | `control_repo_url` | string | `""` | Optional `ansible-pull` Git URL. |
 | `control_repo_branch` | string | `main` | `ansible-pull` branch. |
 | `reconverge_minutes` | number | `15` | `ansible-pull` interval (when URL set). |
-| `mirror_ssh_key_to_secret` | bool | `true` | Mirror generated SSH key into its secret. |
-| `set_winrm_secret` | bool | `false` | Populate WinRM secret from admin creds. |
+| `populate_ansible_secret` | bool | `true` | Write the consolidated secret JSON (SSH key + WinRM account) from Terraform. |
 
 Server counts default to `1` per OS; set them to `0` to deploy none of that OS.
 With `N` servers and `A` AZs, server `i` (0-indexed within its OS pool) is placed in
@@ -611,8 +614,8 @@ AZ `i % A`.
 public-IP maps are empty — only the bastion has a public IP.)
 
 **Ansible control node** — `ansible_control_private_ip`, `ansible_control_instance_id`,
-`ansible_control_security_group_id`, `ansible_control_fqdn`, `ansible_ssh_secret_arn`,
-`ansible_winrm_secret_arn`.
+`ansible_control_security_group_id`, `ansible_control_fqdn`, `ansible_secret_arn`,
+`ansible_secret_name`.
 
 **Other** — `key_pair_name`, `private_key_path` (`sensitive`), `instance_profile_arn`,
 `stack_suffix`.
@@ -633,13 +636,13 @@ A condensed view of each module's variables (root passes these via the wiring in
 - **keypair** — `name_prefix`, `suffix`, `key_name`, `tags`, `algorithm`, `rsa_bits`,
   `private_key_path`, `store_in_ssm`.
 - **deployment** — `name_prefix`, `suffix`, `tags`, `artifact_bucket`.
-- **secrets** — `name_prefix`, `suffix`, `tags`, `ssh_private_key`, `set_ssh_secret`,
-  `winrm_username`, `winrm_password`, `set_winrm_secret`, `recovery_window_in_days`.
+- **secrets** — `name_prefix`, `suffix`, `tags`, `ssh_private_key`, `winrm_username`,
+  `winrm_password`, `set_secret`, `recovery_window_in_days`.
 - **ansible-control** — `name_prefix`, `suffix`, `tags`, `vpc_id`, `vpc_cidr`,
   `subnet_id`, `bastion_security_group_id`, `key_name`, `ami_ssm_parameter`,
   `instance_type`, `root_volume_size`, `repo_volume_size`, `kms_key_id`, `aws_region`,
-  `attach_secrets_policy`, `ssh_secret_arn`, `ssh_secret_name`, `winrm_secret_arn`,
-  `winrm_secret_name`, `control_repo_url`, `control_repo_branch`, `reconverge_minutes`.
+  `attach_secrets_policy`, `secret_arn`, `secret_name`, `control_repo_url`,
+  `control_repo_branch`, `reconverge_minutes`.
 - **bastion** — `name_prefix`, `suffix`, `tags`, `vpc_id`, `vpc_cidr`, `subnet_id`,
   `key_name`, `ami_ssm_parameter`, `instance_type`, `root_volume_size`, `kms_key_id`,
   `iam_instance_profile`, `bastion_allowed_cidrs`, `associate_eip`.
@@ -684,7 +687,7 @@ A condensed view of each module's variables (root passes these via the wiring in
 2. `terraform init`
 3. `terraform apply` — VPC, subnets (incl. management), NAT, endpoints, bastion,
    compute, IAM, KMS, key pair, secrets containers, Ansible control node, DNS.
-4. Set the WinRM secret value out of band (`aws secretsmanager put-secret-value …`).
+4. (Optional) Rotate the consolidated secret JSON later via `aws secretsmanager put-secret-value` — it's populated by Terraform on apply by default.
 5. Configure Ansible on the control node (dynamic inventory on `tag:OS`/`tag:Role`;
    fetch credentials from Secrets Manager at run time).
 

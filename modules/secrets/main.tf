@@ -2,42 +2,28 @@ locals {
   sfx = var.suffix == "" ? "" : "-${var.suffix}"
 }
 
-# Containers only — values are mirrored from the generated key (SSH) or set out
-# of band (WinRM), so plaintext never has to be authored in code.
-
-resource "aws_secretsmanager_secret" "ssh" {
-  name        = "${var.name_prefix}/ansible-ssh-private-key${local.sfx}"
-  description = "Private key the Ansible control node uses for Linux SSH"
-
-  recovery_window_in_days = var.recovery_window_in_days
-
-  tags = merge(var.tags, { Name = "${var.name_prefix}-ansible-ssh-key${local.sfx}" })
-}
-
-resource "aws_secretsmanager_secret_version" "ssh" {
-  # Gate only on the (plan-known) flag. The key material comes from the keypair
-  # module and is unknown until apply, so it must not appear in `count`.
-  count = var.set_ssh_secret ? 1 : 0
-
-  secret_id     = aws_secretsmanager_secret.ssh.id
-  secret_string = var.ssh_private_key
-}
-
-resource "aws_secretsmanager_secret" "winrm" {
-  name        = "${var.name_prefix}/winrm-credential${local.sfx}"
-  description = "Windows account Ansible uses over WinRM"
+# One consolidated secret per deployment holding all Ansible credentials as a JSON
+# document: { ssh_private_key, winrm_username, winrm_password, provision_key }. The
+# SSH value is mirrored from the generated key; the WinRM values come from the Windows
+# admin inputs; provision_key is an arbitrary provisioning nonce — so the bundle is
+# self-contained (no separate out-of-band step needed).
+resource "aws_secretsmanager_secret" "ansible" {
+  name        = "${var.name_prefix}/ansible-credentials${local.sfx}"
+  description = "Consolidated Ansible credentials (SSH private key + WinRM account)"
 
   recovery_window_in_days = var.recovery_window_in_days
 
-  tags = merge(var.tags, { Name = "${var.name_prefix}-winrm-credential${local.sfx}" })
+  tags = merge(var.tags, { Name = "${var.name_prefix}-ansible-credentials${local.sfx}" })
 }
 
-resource "aws_secretsmanager_secret_version" "winrm" {
-  count = var.set_winrm_secret ? 1 : 0
+resource "aws_secretsmanager_secret_version" "ansible" {
+  count = var.set_secret ? 1 : 0
 
-  secret_id = aws_secretsmanager_secret.winrm.id
+  secret_id = aws_secretsmanager_secret.ansible.id
   secret_string = jsonencode({
-    username = var.winrm_username
-    password = var.winrm_password
+    ssh_private_key = var.ssh_private_key
+    winrm_username  = var.winrm_username
+    winrm_password  = var.winrm_password
+    provision_key   = var.provision_key
   })
 }

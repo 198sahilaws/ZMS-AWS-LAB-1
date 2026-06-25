@@ -17,18 +17,29 @@ It is reconciled to the actual deployment:
 
 ## Secrets — build-time injection (option D)
 
-Terraform creates the Secrets Manager containers **before** the control node and injects
-their names/ARNs + region into the node's `user-data`. `cloud-init` writes:
+Terraform creates **one consolidated Secrets Manager secret** (`<base>/ansible-credentials-<suffix>`)
+**before** the control node and injects its name/ARN + region into the node's `user-data`.
+The secret value is a single JSON document:
 
-- `/etc/ansible/secrets.env` — `AWS_REGION`, `ANSIBLE_SSH_SECRET_NAME`/`_ARN`,
-  `ANSIBLE_WINRM_SECRET_NAME`/`_ARN` (shell-sourceable).
-- `/etc/ansible/secret_vars.yml` — the same as Ansible vars (`ansible_ssh_secret_name`, …).
+```json
+{ "ssh_private_key": "<PEM>", "winrm_username": "...", "winrm_password": "...", "provision_key": "<nonce>" }
+```
+
+(Each field is available in playbooks as `ansible_credentials.<field>`, e.g.
+`ansible_credentials.provision_key`.)
+
+`cloud-init` writes:
+
+- `/etc/ansible/secrets.env` — `AWS_REGION`, `ANSIBLE_SECRET_NAME`, `ANSIBLE_SECRET_ARN`
+  (shell-sourceable).
+- `/etc/ansible/secret_vars.yml` — the same as Ansible vars (`ansible_secret_name`, …).
 
 Playbooks load `/etc/ansible/secret_vars.yml` via `vars_files`, so there are **no
 hardcoded secret IDs and no `ListSecrets`** — the control role keeps its tight
-`GetSecretValue`-on-two-ARNs scope. `bootstrap.yml` fetches the SSH private key from
-Secrets Manager to `/etc/ansible/keys/ansible.pem`; `group_vars/os_windows.yml` resolves
-the WinRM credential at run time with the `amazon.aws.aws_secret` lookup.
+`GetSecretValue`-on-one-ARN scope. `group_vars/all.yml` resolves the secret once into
+`ansible_credentials`; `bootstrap.yml` writes its `ssh_private_key` field to
+`/etc/ansible/keys/ansible.pem`, and `group_vars/os_windows.yml` reads its
+`winrm_username` / `winrm_password` fields.
 
 ## Layout
 
@@ -76,7 +87,7 @@ ansible-playbook site.yml --limit 'os_linux:&env_zms'
 
 - [ ] `ansible-galaxy collection install -r requirements.yml -p collections` succeeds.
 - [ ] `/etc/ansible/secret_vars.yml` exists (written by Terraform user-data).
-- [ ] WinRM secret value has been set out of band (`aws secretsmanager put-secret-value …`).
+- [ ] The consolidated secret is populated (Terraform does this by default; rotate via `aws secretsmanager put-secret-value`).
 - [ ] `ansible-inventory --graph` shows `os_linux` / `os_windows` populated.
 - [ ] `ansible os_linux -m ping` returns `pong`; `ansible os_windows -m ansible.windows.win_ping` returns `pong`.
 - [ ] `ansible-playbook site.yml --check` is clean before the first enforce run.

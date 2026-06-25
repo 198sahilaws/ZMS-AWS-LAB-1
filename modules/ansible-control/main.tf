@@ -1,7 +1,7 @@
 locals {
   sfx = var.suffix == "" ? "" : "-${var.suffix}"
-  # Only grant secret reads for ARNs that were actually provided.
-  readable_secret_arns = compact([var.ssh_secret_arn, var.winrm_secret_arn])
+  # Only grant secret reads for the ARN that was actually provided.
+  readable_secret_arns = compact([var.secret_arn])
 }
 
 data "aws_partition" "current" {}
@@ -151,10 +151,8 @@ resource "aws_instance" "control" {
     control_repo_branch = var.control_repo_branch
     reconverge_minutes  = var.reconverge_minutes
     aws_region          = var.aws_region
-    ssh_secret_name     = var.ssh_secret_name
-    ssh_secret_arn      = var.ssh_secret_arn
-    winrm_secret_name   = var.winrm_secret_name
-    winrm_secret_arn    = var.winrm_secret_arn
+    secret_name         = var.secret_name
+    secret_arn          = var.secret_arn
   })
 
   tags = merge(var.tags, {

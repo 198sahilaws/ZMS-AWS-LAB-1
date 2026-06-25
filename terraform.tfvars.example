@@ -79,10 +79,11 @@ control_repo_url    = "" # e.g. "https://github.com/your-org/ansible-control.git
 control_repo_branch = "main"
 reconverge_minutes  = 15
 
-# Mirror the generated SSH private key into Secrets Manager so the control node
-# can fetch it at run time. Set false to populate the secret out of band instead.
-mirror_ssh_key_to_secret = true
+# Populate the single consolidated Ansible credentials secret (SSH key + WinRM
+# account + provision_key) from Terraform. Set false to create an empty container
+# and set the JSON value out of band instead.
+populate_ansible_secret = true
 
-# Populate the WinRM secret from windows_admin_username/password. Default false
-# keeps the container empty so you set the value out of band.
-set_winrm_secret = false
+# Arbitrary provisioning nonce stored under the secret's "provision_key" key.
+# Has a default; override here or via TF_VAR_provision_key for real values.
+# provision_key = "4|prod.zpath.net|...|288263465653501953|1"

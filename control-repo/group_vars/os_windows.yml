@@ -9,8 +9,7 @@ ansible_winrm_transport: ntlm
 # with a trusted/ACM-issued cert in production).
 ansible_winrm_server_cert_validation: ignore
 
-# WinRM credential resolved at run time from Secrets Manager, using the secret
-# name Terraform injected (option D). The secret holds {"username","password"}.
-winrm_creds: "{{ lookup('amazon.aws.aws_secret', ansible_winrm_secret_name, region=aws_region) | from_json }}"
-ansible_user: "{{ winrm_creds.username }}"
-ansible_password: "{{ winrm_creds.password }}"
+# WinRM credential read from the consolidated secret (resolved in group_vars/all.yml
+# as `ansible_credentials`). The secret JSON holds winrm_username / winrm_password.
+ansible_user: "{{ ansible_credentials.winrm_username }}"
+ansible_password: "{{ ansible_credentials.winrm_password }}"

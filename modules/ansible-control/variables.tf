@@ -71,7 +71,7 @@ variable "kms_key_id" {
 }
 
 variable "attach_secrets_policy" {
-  description = "Attach the scoped secretsmanager:GetSecretValue policy for ssh_secret_arn/winrm_secret_arn. Plan-known flag (the ARNs themselves resolve at apply time). Set false for standalone use without secrets."
+  description = "Attach the scoped secretsmanager:GetSecretValue policy for secret_arn. Plan-known flag (the ARN itself resolves at apply time). Set false for standalone use without secrets."
   type        = bool
   default     = true
 }
@@ -81,26 +81,14 @@ variable "aws_region" {
   type        = string
 }
 
-variable "ssh_secret_arn" {
-  description = "ARN of the SSH private-key secret the control node may read."
+variable "secret_arn" {
+  description = "ARN of the consolidated Ansible credentials secret the control node may read."
   type        = string
   default     = ""
 }
 
-variable "ssh_secret_name" {
-  description = "Name of the SSH private-key secret, injected into /etc/ansible at build time."
-  type        = string
-  default     = ""
-}
-
-variable "winrm_secret_arn" {
-  description = "ARN of the WinRM credential secret the control node may read."
-  type        = string
-  default     = ""
-}
-
-variable "winrm_secret_name" {
-  description = "Name of the WinRM credential secret, injected into /etc/ansible at build time."
+variable "secret_name" {
+  description = "Name of the consolidated Ansible credentials secret, injected into /etc/ansible at build time."
   type        = string
   default     = ""
 }

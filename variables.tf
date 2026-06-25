@@ -305,14 +305,15 @@ variable "reconverge_minutes" {
   default     = 15
 }
 
-variable "mirror_ssh_key_to_secret" {
-  description = "Mirror the generated SSH private key into the Ansible SSH Secrets Manager container. When false, set the value out of band."
+variable "populate_ansible_secret" {
+  description = "Populate the single consolidated Ansible credentials secret (SSH key + WinRM account) from Terraform. When false, only the empty container is created and the JSON value is set out of band."
   type        = bool
   default     = true
 }
 
-variable "set_winrm_secret" {
-  description = "Populate the WinRM credential secret from windows_admin_username/password. Default false: create the container and set the value out of band."
-  type        = bool
-  default     = false
+variable "provision_key" {
+  description = "Arbitrary provisioning nonce stored in the consolidated secret under the key 'provision_key'. Override via tfvars / TF_VAR_provision_key for real values."
+  type        = string
+  sensitive   = true
+  default     = "4|prod.zpath.net|1IcW2jdD3L1H6nk7FGniTJBzVm/gjIGk7GerjyW6NqQjhy2B7X+c//QG7GRqGZuIW6gfi7p7QIEHwHhCkEHc6YYfzoBWgbzKqpyWqEmLFvQew5EHM+ehID4UnwD02dJotI79PCG2YvsIX0xrnNP59WaEN3+et3R3uiMLSqBM8D7y5CDRiMTerVqAd9Yw5aYfVS8YW8Qdyie6xVPF2AtNhk2/wZxbxP8VJTo2C9dOvdblFwy/oF4Z2C6oDTf0RmF/seUOcKB60WhheLolEeK8gCJgtaicwXSkKpOdRjJj36f8oeWf0sw2IL2LCYW672Hw8wHs5DyJyWv5GaeIwO6ODOe+PaOBCHmq7cTzstpvKIDKA73y8P7RYWCIoUlnazWO|288263465653501953|1"
 }

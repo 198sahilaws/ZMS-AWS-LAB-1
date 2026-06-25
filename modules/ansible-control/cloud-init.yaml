@@ -11,31 +11,28 @@ write_files:
     content: |
       export ANSIBLE_REPOS=/srv/repos
 
-  # Secrets Manager handoff: Terraform injects the secret names/ARNs + region at
-  # build time. Shell-sourceable form (for reconverge/bootstrap scripts).
+  # Secrets Manager handoff: Terraform injects the single consolidated secret's
+  # name/ARN + region at build time. Shell-sourceable form (for reconverge/bootstrap).
   - path: /etc/ansible/secrets.env
     permissions: '0640'
     owner: root:root
     content: |
       # Injected by Terraform at control-node build time. Do not edit by hand.
       AWS_REGION=${aws_region}
-      ANSIBLE_SSH_SECRET_NAME=${ssh_secret_name}
-      ANSIBLE_SSH_SECRET_ARN=${ssh_secret_arn}
-      ANSIBLE_WINRM_SECRET_NAME=${winrm_secret_name}
-      ANSIBLE_WINRM_SECRET_ARN=${winrm_secret_arn}
+      ANSIBLE_SECRET_NAME=${secret_name}
+      ANSIBLE_SECRET_ARN=${secret_arn}
 
   # Same values as an Ansible vars file (use with -e @/etc/ansible/secret_vars.yml
-  # or vars_files), so playbooks resolve the secrets without hardcoded IDs.
+  # or vars_files), so playbooks resolve the secret without hardcoded IDs. The
+  # secret value is a JSON document: { ssh_private_key, winrm_username, winrm_password }.
   - path: /etc/ansible/secret_vars.yml
     permissions: '0640'
     owner: root:root
     content: |
       # Injected by Terraform at control-node build time. Do not edit by hand.
       aws_region: "${aws_region}"
-      ansible_ssh_secret_name: "${ssh_secret_name}"
-      ansible_ssh_secret_arn: "${ssh_secret_arn}"
-      ansible_winrm_secret_name: "${winrm_secret_name}"
-      ansible_winrm_secret_arn: "${winrm_secret_arn}"
+      ansible_secret_name: "${secret_name}"
+      ansible_secret_arn: "${secret_arn}"
 
 runcmd:
   # Ensure the SSM agent is running (private node reachable via Session Manager).

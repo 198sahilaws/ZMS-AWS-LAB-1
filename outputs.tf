@@ -221,14 +221,14 @@ output "ansible_control_fqdn" {
   value       = try(module.dns.record_fqdns["ansible-control"], null)
 }
 
-output "ansible_ssh_secret_arn" {
-  description = "ARN of the Ansible SSH private-key secret (null when disabled)."
-  value       = one(module.secrets[*].ssh_secret_arn)
+output "ansible_secret_arn" {
+  description = "ARN of the consolidated Ansible credentials secret (null when disabled)."
+  value       = one(module.secrets[*].secret_arn)
 }
 
-output "ansible_winrm_secret_arn" {
-  description = "ARN of the WinRM credential secret (null when disabled)."
-  value       = one(module.secrets[*].winrm_secret_arn)
+output "ansible_secret_name" {
+  description = "Name of the consolidated Ansible credentials secret (null when disabled)."
+  value       = one(module.secrets[*].secret_name)
 }
 
 #############################

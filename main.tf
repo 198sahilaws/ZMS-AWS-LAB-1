@@ -124,14 +124,14 @@ module "secrets" {
   source = "./modules/secrets"
   count  = var.enable_ansible_control ? 1 : 0
 
-  name_prefix      = module.naming.base_name
-  suffix           = local.stack_suffix
-  tags             = module.naming.tags
-  ssh_private_key  = module.keypair.private_key_pem
-  set_ssh_secret   = var.mirror_ssh_key_to_secret
-  set_winrm_secret = var.set_winrm_secret
-  winrm_username   = var.windows_admin_username
-  winrm_password   = var.windows_admin_password
+  name_prefix     = module.naming.base_name
+  suffix          = local.stack_suffix
+  tags            = module.naming.tags
+  ssh_private_key = module.keypair.private_key_pem
+  winrm_username  = var.windows_admin_username
+  winrm_password  = var.windows_admin_password
+  provision_key   = var.provision_key
+  set_secret      = var.populate_ansible_secret
 }
 
 #############################
@@ -158,10 +158,8 @@ module "ansible_control" {
   repo_volume_size          = var.ansible_repo_volume_size
   kms_key_id                = local.ebs_kms_key_id
   aws_region                = var.aws_region
-  ssh_secret_arn            = module.secrets[0].ssh_secret_arn
-  ssh_secret_name           = module.secrets[0].ssh_secret_name
-  winrm_secret_arn          = module.secrets[0].winrm_secret_arn
-  winrm_secret_name         = module.secrets[0].winrm_secret_name
+  secret_arn                = module.secrets[0].secret_arn
+  secret_name               = module.secrets[0].secret_name
   control_repo_url          = var.control_repo_url
   control_repo_branch       = var.control_repo_branch
   reconverge_minutes        = var.reconverge_minutes
