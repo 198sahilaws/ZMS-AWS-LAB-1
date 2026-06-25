@@ -142,6 +142,10 @@ module "ansible_control" {
   source = "./modules/ansible-control"
   count  = var.enable_ansible_control ? 1 : 0
 
+  # Secrets Manager containers (SSH key + WinRM credential) must exist before the
+  # control node is built — Terraform injects their names into the node's user-data.
+  depends_on = [module.secrets]
+
   name_prefix               = module.naming.base_name
   suffix                    = local.stack_suffix
   tags                      = module.naming.tags
@@ -153,8 +157,11 @@ module "ansible_control" {
   instance_type             = var.ansible_control_instance_type
   repo_volume_size          = var.ansible_repo_volume_size
   kms_key_id                = local.ebs_kms_key_id
+  aws_region                = var.aws_region
   ssh_secret_arn            = module.secrets[0].ssh_secret_arn
+  ssh_secret_name           = module.secrets[0].ssh_secret_name
   winrm_secret_arn          = module.secrets[0].winrm_secret_arn
+  winrm_secret_name         = module.secrets[0].winrm_secret_name
   control_repo_url          = var.control_repo_url
   control_repo_branch       = var.control_repo_branch
   reconverge_minutes        = var.reconverge_minutes

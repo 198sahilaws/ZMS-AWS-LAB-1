@@ -150,6 +150,11 @@ resource "aws_instance" "control" {
     control_repo_url    = var.control_repo_url
     control_repo_branch = var.control_repo_branch
     reconverge_minutes  = var.reconverge_minutes
+    aws_region          = var.aws_region
+    ssh_secret_name     = var.ssh_secret_name
+    ssh_secret_arn      = var.ssh_secret_arn
+    winrm_secret_name   = var.winrm_secret_name
+    winrm_secret_arn    = var.winrm_secret_arn
   })
 
   tags = merge(var.tags, {

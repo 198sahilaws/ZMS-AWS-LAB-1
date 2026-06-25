@@ -1,0 +1,41 @@
+---
+# The push playbook for the estate: two OS-scoped plays selected by the dynamic
+# groups (os_linux / os_windows). Run from the control node:
+#   ansible-playbook site.yml
+# (group_vars/all.yml + the injected /etc/ansible/secret_vars.yml supply the
+#  secret IDs; vars_files below loads the injected file explicitly so the WinRM
+#  lookup resolves.)
+
+- name: Linux estate
+  hosts: os_linux
+  gather_facts: true
+  vars_files:
+    - /etc/ansible/secret_vars.yml
+  tasks:
+    - name: Point Debian/Ubuntu hosts at the internal apt repo
+      ansible.builtin.apt_repository:
+        repo: "deb [trusted=yes] {{ internal_repo_base }}/deb stable main"
+        state: present
+      when: ansible_os_family == "Debian"
+
+    - name: Install a baseline package (works on apt + dnf)
+      ansible.builtin.package:
+        name: htop
+        state: present
+
+- name: Windows estate
+  hosts: os_windows
+  gather_facts: true
+  vars_files:
+    - /etc/ansible/secret_vars.yml
+  tasks:
+    - name: Configure the internal Chocolatey source
+      chocolatey.chocolatey.win_chocolatey_source:
+        name: internal
+        source: "{{ internal_repo_base }}/choco"
+        state: present
+
+    - name: Install a signed package
+      chocolatey.chocolatey.win_chocolatey:
+        name: 7zip
+        state: present

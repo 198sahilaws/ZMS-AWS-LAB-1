@@ -11,11 +11,18 @@ locals {
   }
 
   # First-boot PowerShell: ensure the SSM agent is running, set the local admin
-  # account, and (for Ansible push) stand up a WinRM HTTPS listener on 5986.
+  # account, and stand up a WinRM HTTPS listener on 5986 so the host is
+  # immediately manageable by Ansible (ntlm transport over TLS).
   user_data = <<-POWERSHELL
     <powershell>
+    Start-Transcript -Path "C:\Windows\Temp\winrm-bootstrap.log" -Append
+    $ErrorActionPreference = "Stop"
+
+    # --- SSM agent (Session Manager access) ---
     Set-Service -Name AmazonSSMAgent -StartupType Automatic
     Start-Service AmazonSSMAgent
+
+    # --- Local admin account used by Ansible over WinRM ---
     $User = "${var.windows_admin_username}"
     $Pass = ConvertTo-SecureString "${var.windows_admin_password}" -AsPlainText -Force
     if (Get-LocalUser -Name $User -ErrorAction SilentlyContinue) {
@@ -24,14 +31,32 @@ locals {
       New-LocalUser -Name $User -Password $Pass -PasswordNeverExpires -AccountNeverExpires
       Add-LocalGroupMember -Group "Administrators" -Member $User
     }
-    # WinRM over HTTPS (5986) for Ansible. Self-signed cert; encrypted transport.
-    winrm quickconfig -quiet
-    $cert = New-SelfSignedCertificate -DnsName $env:COMPUTERNAME -CertStoreLocation Cert:\LocalMachine\My
-    New-Item -Path WSMan:\localhost\Listener -Transport HTTPS -Address * -CertificateThumbPrint $cert.Thumbprint -Force
-    Set-Item -Path WSMan:\localhost\Service\Auth\Basic -Value $true
-    Set-Item -Path WSMan:\localhost\Service\AllowUnencrypted -Value $false
+
+    # --- Enable WinRM over HTTPS (5986) for Ansible ---
+    # Base remoting first. -SkipNetworkProfileCheck is required because EC2's NIC
+    # starts on the "Public" profile, which otherwise blocks WinRM setup.
     Enable-PSRemoting -Force -SkipNetworkProfileCheck
+    Set-Service -Name WinRM -StartupType Automatic
+
+    # Self-signed server-authentication certificate for the HTTPS listener.
+    $cert = New-SelfSignedCertificate -DnsName $env:COMPUTERNAME -CertStoreLocation Cert:\LocalMachine\My
+
+    # (Re)create the HTTPS listener on 5986 bound to that certificate.
+    Get-ChildItem WSMan:\localhost\Listener | Where-Object { $_.Keys -contains "Transport=HTTPS" } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+    New-Item -Path WSMan:\localhost\Listener -Transport HTTPS -Address * -CertificateThumbPrint $cert.Thumbprint -Force
+
+    # Require encryption; keep Negotiate/NTLM enabled (Ansible's ntlm transport).
+    Set-Item -Path WSMan:\localhost\Service\Auth\Negotiate -Value $true
+    Set-Item -Path WSMan:\localhost\Service\AllowUnencrypted -Value $false
+
+    # Raise the per-shell memory ceiling so Ansible PowerShell modules don't OOM.
+    try { Set-Item -Path WSMan:\localhost\Shell\MaxMemoryPerShellMB -Value 2048 } catch {}
+
+    # Allow 5986 inbound at the OS firewall (the security group limits the source).
     New-NetFirewallRule -DisplayName "WinRM HTTPS 5986" -Direction Inbound -LocalPort 5986 -Protocol TCP -Action Allow -ErrorAction SilentlyContinue
+
+    Restart-Service WinRM
+    Stop-Transcript
     </powershell>
     <persist>false</persist>
   POWERSHELL

@@ -95,16 +95,17 @@ resource "aws_subnet" "private_eks" {
   })
 }
 
+# Single management subnet (hosts the Ansible control node) in the first AZ.
 resource "aws_subnet" "management" {
-  count = length(local.azs)
+  count = 1
 
   vpc_id                  = aws_vpc.this.id
-  cidr_block              = local.management_cidrs[count.index]
-  availability_zone       = local.azs[count.index]
+  cidr_block              = local.management_cidrs[0]
+  availability_zone       = local.azs[0]
   map_public_ip_on_launch = false
 
   tags = merge(var.tags, {
-    Name = "${var.name_prefix}-management-${local.azs[count.index]}${local.sfx}"
+    Name = "${var.name_prefix}-management-${local.azs[0]}${local.sfx}"
     Tier = "management"
   })
 }

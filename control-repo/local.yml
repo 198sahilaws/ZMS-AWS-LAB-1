@@ -1,0 +1,5 @@
+---
+# ansible-pull runs local.yml by default. The Terraform cloud-init reconverge cron
+# (`ansible-pull -U <control_repo_url> -C <branch>`) therefore self-configures the
+# control node via bootstrap.yml.
+- import_playbook: bootstrap.yml

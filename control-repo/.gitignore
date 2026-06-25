@@ -1,0 +1,14 @@
+# Installed collections (fetched by bootstrap.yml)
+collections/
+
+# Fetched secrets / keys — never commit
+keys/
+*.pem
+*.key
+secret_vars.yml
+secrets.env
+
+# Ansible cruft
+*.retry
+/var/tmp/ansible_facts
+.facts_cache/

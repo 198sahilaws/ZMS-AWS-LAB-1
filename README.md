@@ -87,10 +87,10 @@ are needed to customise names, tags, sizes, CIDRs, instances, or the control pla
    ┌─────────────────────────┐ ┌─────────────────────────┐
    │ Private EKS subnet AZ-a │ │ Private EKS subnet AZ-b │  tagged for future EKS
    └─────────────────────────┘ └─────────────────────────┘
-   ┌─────────────────────────┐ ┌─────────────────────────┐
-   │ Management subnet AZ-a  │ │ Management subnet AZ-b  │  Ansible control node
-   │  • ansible-control      │ │                         │  (private, NAT egress)
-   └─────────────────────────┘ └─────────────────────────┘
+   ┌─────────────────────────┐
+   │ Management subnet AZ-a  │   single subnet (private, NAT egress)
+   │  • ansible-control      │   secret names injected via user-data
+   └─────────────────────────┘
 
    VPC endpoints: ssm, ssmmessages, ec2messages, ec2 (interface) + s3 (gateway)
    Route 53 private zone: A record per host (bastion, linux-*, win-*, ansible-control, repo)
@@ -295,16 +295,16 @@ functional and are **not** suffixed (only resource names / `Name` tags are).
 Four tiers, one subnet per AZ (two AZs by default). CIDRs derive from `vpc_cidr` via
 `cidrsubnet(vpc_cidr, 8, offset)` unless overridden:
 
-| Tier | Variable | Default offset | Example (`10.0.0.0/16`) | Public IP | Routing |
-|---|---|---|---|---|---|
-| Public | `public_subnet_cidrs` | `i` | `10.0.0.0/24`, `10.0.1.0/24` | configurable | IGW |
-| Private app | `private_app_subnet_cidrs` | `i+10` | `10.0.10.0/24`, `10.0.11.0/24` | none | NAT |
-| Private EKS | `private_eks_subnet_cidrs` | `i+20` | `10.0.20.0/24`, `10.0.21.0/24` | none | NAT |
-| Management | `management_subnet_cidrs` | `i+30` | `10.0.30.0/24`, `10.0.31.0/24` | none | NAT |
+| Tier | Variable | Count | Default offset | Example (`10.0.0.0/16`) | Public IP | Routing |
+|---|---|---|---|---|---|---|
+| Public | `public_subnet_cidrs` | one per AZ | `i` | `10.0.0.0/24`, `10.0.1.0/24` | configurable | IGW |
+| Private app | `private_app_subnet_cidrs` | one per AZ | `i+10` | `10.0.10.0/24`, `10.0.11.0/24` | none | NAT |
+| Private EKS | `private_eks_subnet_cidrs` | one per AZ | `i+20` | `10.0.20.0/24`, `10.0.21.0/24` | none | NAT |
+| Management | `management_subnet_cidrs` | **single (first AZ)** | `i+30` | `10.0.30.0/24` | none | NAT |
 
 The EKS subnets carry `kubernetes.io/role/internal-elb = 1` (and the public subnets
-`kubernetes.io/role/elb = 1`) for future cluster use. The **management** subnet hosts
-the Ansible control node.
+`kubernetes.io/role/elb = 1`) for future cluster use. The **management** subnet is a
+single subnet in the first AZ and hosts the Ansible control node.
 
 ### Routing & outbound connectivity
 
@@ -436,6 +436,14 @@ plus everything a push-based flow needs (`enable_ansible_control`, default `true
 - **Dynamic inventory + secrets IAM.** A dedicated role grants `ec2:Describe*` (for the
   `amazon.aws.aws_ec2` inventory plugin) and `secretsmanager:GetSecretValue` scoped to
   exactly the two secret ARNs — separate from the managed-hosts SSM profile.
+- **Build-time Secrets Manager handoff.** The two Secrets Manager containers (SSH key +
+  WinRM credential) are created **before** the control node (`depends_on = [module.secrets]`),
+  and Terraform injects their names/ARNs + region into the node via `user-data`. `cloud-init`
+  writes `/etc/ansible/secrets.env` (shell-sourceable) and `/etc/ansible/secret_vars.yml`
+  (an Ansible vars file), so playbooks resolve the secrets with no hardcoded IDs — e.g.
+  `ansible-playbook -e @/etc/ansible/secret_vars.yml …`. This deliberately couples the
+  control node's provisioning to those secret values (a legitimate cross-machine handoff,
+  since Terraform builds the consumer).
 - **Push paths (SG-to-SG).** Managed Linux hosts accept **SSH/22** from the control
   node SG; managed Windows hosts accept **WinRM HTTPS/5986** from it. These rules exist
   only while the control node exists.
@@ -460,8 +468,10 @@ plus everything a push-based flow needs (`enable_ansible_control`, default `true
      --secret-string '{"username":"zmsadmin","password":"<pw>"}'
    ```
 
-3. On the control node, point your `aws_ec2` inventory at `tag:OS` / `tag:Role`, and
-   fetch the SSH key / WinRM credential from Secrets Manager at run time.
+3. On the control node, the secret names/ARNs + region are already in
+   `/etc/ansible/secrets.env` and `/etc/ansible/secret_vars.yml`. Point your `aws_ec2`
+   inventory at `tag:OS` / `tag:Role`, and fetch the SSH key / WinRM credential from
+   Secrets Manager at run time using those injected IDs.
 
 ---
 
@@ -627,9 +637,9 @@ A condensed view of each module's variables (root passes these via the wiring in
   `winrm_username`, `winrm_password`, `set_winrm_secret`, `recovery_window_in_days`.
 - **ansible-control** — `name_prefix`, `suffix`, `tags`, `vpc_id`, `vpc_cidr`,
   `subnet_id`, `bastion_security_group_id`, `key_name`, `ami_ssm_parameter`,
-  `instance_type`, `root_volume_size`, `repo_volume_size`, `kms_key_id`,
-  `ssh_secret_arn`, `winrm_secret_arn`, `control_repo_url`, `control_repo_branch`,
-  `reconverge_minutes`.
+  `instance_type`, `root_volume_size`, `repo_volume_size`, `kms_key_id`, `aws_region`,
+  `attach_secrets_policy`, `ssh_secret_arn`, `ssh_secret_name`, `winrm_secret_arn`,
+  `winrm_secret_name`, `control_repo_url`, `control_repo_branch`, `reconverge_minutes`.
 - **bastion** — `name_prefix`, `suffix`, `tags`, `vpc_id`, `vpc_cidr`, `subnet_id`,
   `key_name`, `ami_ssm_parameter`, `instance_type`, `root_volume_size`, `kms_key_id`,
   `iam_instance_profile`, `bastion_allowed_cidrs`, `associate_eip`.

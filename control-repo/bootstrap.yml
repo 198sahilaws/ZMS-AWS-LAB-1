@@ -1,0 +1,31 @@
+---
+# The control node configuring ITSELF (localhost). Run on first boot and on every
+# ansible-pull reconverge (local.yml delegates here). Consumes the Terraform-injected
+# secret IDs from /etc/ansible/secret_vars.yml (option D).
+- name: Bootstrap the Ansible control node
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars_files:
+    - /etc/ansible/secret_vars.yml      # injected by Terraform user-data
+  tasks:
+    - name: Ensure the key directory exists
+      ansible.builtin.file:
+        path: /etc/ansible/keys
+        state: directory
+        mode: "0700"
+
+    - name: Fetch the Ansible SSH private key from Secrets Manager
+      ansible.builtin.copy:
+        dest: "{{ ansible_ssh_private_key_file }}"
+        content: "{{ lookup('amazon.aws.aws_secret', ansible_ssh_secret_name, region=aws_region) }}"
+        mode: "0600"
+      no_log: true
+      when: ansible_ssh_secret_name | length > 0
+
+    - name: Install required collections
+      ansible.builtin.command:
+        cmd: ansible-galaxy collection install -r requirements.yml -p collections
+        chdir: "{{ playbook_dir }}"
+      register: galaxy_install
+      changed_when: "'Installing' in galaxy_install.stdout"

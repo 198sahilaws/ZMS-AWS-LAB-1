@@ -1,0 +1,7 @@
+---
+# Connection settings for all Linux hosts (group os_linux from the OS tag).
+# ansible_user is set per Role group (role_amazon -> ec2-user, role_ubuntu -> ubuntu),
+# because this estate mixes Amazon Linux and Ubuntu with different default users.
+ansible_connection: ssh
+ansible_become: true
+ansible_become_method: sudo

@@ -76,14 +76,31 @@ variable "attach_secrets_policy" {
   default     = true
 }
 
+variable "aws_region" {
+  description = "AWS region, injected into the control node so it can resolve Secrets Manager / inventory."
+  type        = string
+}
+
 variable "ssh_secret_arn" {
   description = "ARN of the SSH private-key secret the control node may read."
   type        = string
   default     = ""
 }
 
+variable "ssh_secret_name" {
+  description = "Name of the SSH private-key secret, injected into /etc/ansible at build time."
+  type        = string
+  default     = ""
+}
+
 variable "winrm_secret_arn" {
   description = "ARN of the WinRM credential secret the control node may read."
+  type        = string
+  default     = ""
+}
+
+variable "winrm_secret_name" {
+  description = "Name of the WinRM credential secret, injected into /etc/ansible at build time."
   type        = string
   default     = ""
 }

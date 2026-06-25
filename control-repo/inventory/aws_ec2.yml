@@ -1,0 +1,38 @@
+---
+# Dynamic inventory: discovers managed instances via the control node's IAM role
+# (ec2:Describe*, granted by Terraform) and groups them by the standard tags.
+plugin: amazon.aws.aws_ec2
+
+# Region is intentionally NOT hardcoded. The plugin resolves it from the control
+# node's own region (IMDS) or the AWS_REGION env var, which Terraform injected into
+# /etc/ansible/secrets.env. To pin it explicitly, uncomment and set `regions:`.
+# regions:
+#   - eu-west-3
+
+filters:
+  instance-state-name: running
+  # Only instances this stack manages. NOTE the capital "T" — the Terraform
+  # naming module sets ManagedBy = "Terraform".
+  tag:ManagedBy: Terraform
+
+# The control node sits inside the VPC, so reach hosts on their private IP.
+hostnames:
+  - private-ip-address
+
+compose:
+  ansible_host: private_ip_address
+
+# Build groups from tags:
+#   OS=linux/windows      -> os_linux / os_windows   (selects the connection plugin)
+#   Role=amazon/ubuntu/.. -> role_amazon / role_ubuntu / role_windows (per-OS user)
+#   Environment=zms/..    -> env_zms / ...            (scoping with --limit)
+keyed_groups:
+  - key: tags.OS
+    prefix: os
+    separator: "_"
+  - key: tags.Role
+    prefix: role
+    separator: "_"
+  - key: tags.Environment
+    prefix: env
+    separator: "_"
