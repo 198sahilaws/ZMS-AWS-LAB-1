@@ -1,38 +1,30 @@
 ---
-# Dynamic inventory: discovers managed instances via the control node's IAM role
-# (ec2:Describe*, granted by Terraform) and groups them by the standard tags.
+# EC2 dynamic inventory.
+# Discovers instances via the EC2-describe IAM rights granted in Document 1 and
+# groups them by the standard Role / OS / Environment tags. The OS tag drives the
+# Linux/Windows split that selects the connection plugin.
 plugin: amazon.aws.aws_ec2
-
-# Region is intentionally NOT hardcoded. The plugin resolves it from the control
-# node's own region (IMDS) or the AWS_REGION env var, which Terraform injected into
-# /etc/ansible/secrets.env. To pin it explicitly, uncomment and set `regions:`.
-# regions:
-#   - eu-west-3
-
+# Region: single source of truth via the AWS_REGION env var (shared with the
+# playbooks and reconverge.sh); falls back to eu-west-3 if unset. The aws_ec2
+# plugin templates option values, so this lookup resolves at inventory parse time.
+# If you prefer not to rely on templating, delete the `regions` block entirely
+# and boto3 will use AWS_REGION / AWS_DEFAULT_REGION from the environment.
+regions:
+  - "{{ lookup('ansible.builtin.env', 'AWS_REGION') | default('eu-west-3', true) }}"
 filters:
   instance-state-name: running
-  # Only instances this stack manages. NOTE the capital "T" — the Terraform
-  # naming module sets ManagedBy = "Terraform".
-  tag:ManagedBy: Terraform
-
-# The control node sits inside the VPC, so reach hosts on their private IP.
+  tag:ManagedBy: Terraform          # only managed instances
+# Prefer private IP — the control node sits inside the VPC.
 hostnames:
   - private-ip-address
-
 compose:
   ansible_host: private_ip_address
-
-# Build groups from tags:
-#   OS=linux/windows      -> os_linux / os_windows   (selects the connection plugin)
-#   Role=amazon/ubuntu/.. -> role_amazon / role_ubuntu / role_windows (per-OS user)
-#   Environment=zms/..    -> env_zms / ...            (scoping with --limit)
+# Build groups from tags: creates groups like 'os_linux', 'role_web', 'env_prod'
 keyed_groups:
   - key: tags.OS
     prefix: os
     separator: "_"
   - key: tags.Role
     prefix: role
-    separator: "_"
   - key: tags.Environment
     prefix: env
-    separator: "_"

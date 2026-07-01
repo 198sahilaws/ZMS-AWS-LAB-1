@@ -78,13 +78,13 @@ variable "root_volume_size" {
 }
 
 variable "windows_server_count" {
-  description = "Number of Windows servers to launch (round-robined across AZs)."
+  description = "Number of Windows servers to launch (minimum 2; round-robined across AZs). The first is tagged Domain_Controller=Enabled."
   type        = number
-  default     = 1
+  default     = 2
 
   validation {
-    condition     = var.windows_server_count >= 0
-    error_message = "windows_server_count must be >= 0."
+    condition     = var.windows_server_count >= 2
+    error_message = "windows_server_count must be at least 2 (always deploy two or more Windows servers)."
   }
 }
 

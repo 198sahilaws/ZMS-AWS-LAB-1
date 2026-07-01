@@ -3,10 +3,12 @@ locals {
   az_count = length(var.subnet_ids)
 
   # Expand the Windows count into instances, round-robining across AZ subnets:
-  # server i lands in subnet_ids[i % az_count].
+  # server i lands in subnet_ids[i % az_count]. The first server (i == 0) is the
+  # primary and gets the Domain_Controller tag; the rest do not.
   instances = {
     for i in range(var.windows_server_count) : tostring(i + 1) => {
       subnet_index = i % local.az_count
+      is_primary   = i == 0
     }
   }
 
@@ -144,9 +146,14 @@ resource "aws_instance" "windows" {
     tags        = merge(var.tags, { Name = "${var.name_prefix}-windows-${each.key}-root${local.sfx}" })
   }
 
-  tags = merge(var.tags, {
-    Name = "${var.name_prefix}-windows-${each.key}${local.sfx}"
-    OS   = "windows"
-    Role = "windows"
-  })
+  tags = merge(
+    var.tags,
+    {
+      Name = "${var.name_prefix}-windows-${each.key}${local.sfx}"
+      OS   = "windows"
+      Role = "windows"
+    },
+    # Only the first Windows server is tagged as the domain controller.
+    each.value.is_primary ? { Domain_Controller = "Enabled" } : {},
+  )
 }

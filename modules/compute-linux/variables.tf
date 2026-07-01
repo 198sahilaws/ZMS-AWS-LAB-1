@@ -71,24 +71,24 @@ variable "root_volume_size" {
 }
 
 variable "amazon_linux_server_count" {
-  description = "Number of Amazon Linux servers to launch (round-robined across AZs)."
+  description = "Number of Amazon Linux servers (minimum 2; round-robined across AZs). By ordinal: 1st=Database, 2nd=Web_Server, 3rd+=Client (Role tag)."
   type        = number
-  default     = 1
+  default     = 2
 
   validation {
-    condition     = var.amazon_linux_server_count >= 0
-    error_message = "amazon_linux_server_count must be >= 0."
+    condition     = var.amazon_linux_server_count >= 2
+    error_message = "amazon_linux_server_count must be at least 2 (always deploy two or more)."
   }
 }
 
 variable "ubuntu_server_count" {
-  description = "Number of Ubuntu servers to launch (round-robined across AZs)."
+  description = "Number of Ubuntu servers (minimum 2; round-robined across AZs). By ordinal: 1st=Database, 2nd=Web_Server, 3rd+=Client (Role tag)."
   type        = number
-  default     = 1
+  default     = 2
 
   validation {
-    condition     = var.ubuntu_server_count >= 0
-    error_message = "ubuntu_server_count must be >= 0."
+    condition     = var.ubuntu_server_count >= 2
+    error_message = "ubuntu_server_count must be at least 2 (always deploy two or more)."
   }
 }
 

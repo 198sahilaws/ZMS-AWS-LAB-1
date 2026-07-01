@@ -56,7 +56,7 @@ variable "random_suffix_length" {
 variable "aws_region" {
   description = "AWS region to deploy into."
   type        = string
-  default     = "us-east-1"
+  default     = "eu-west-3"
 }
 
 #############################
@@ -197,15 +197,25 @@ variable "linux_instance_type" {
 }
 
 variable "amazon_linux_server_count" {
-  description = "Number of Amazon Linux servers to launch. Round-robined across the chosen AZs."
+  description = "Number of Amazon Linux servers (minimum 2). Round-robined across AZs; Role tag by ordinal: 1st=Database, 2nd=Web_Server, 3rd+=Client."
   type        = number
-  default     = 1
+  default     = 2
+
+  validation {
+    condition     = var.amazon_linux_server_count >= 2
+    error_message = "amazon_linux_server_count must be at least 2 (always deploy two or more)."
+  }
 }
 
 variable "ubuntu_server_count" {
-  description = "Number of Ubuntu servers to launch. Round-robined across the chosen AZs."
+  description = "Number of Ubuntu servers (minimum 2). Round-robined across AZs; Role tag by ordinal: 1st=Database, 2nd=Web_Server, 3rd+=Client."
   type        = number
-  default     = 1
+  default     = 2
+
+  validation {
+    condition     = var.ubuntu_server_count >= 2
+    error_message = "ubuntu_server_count must be at least 2 (always deploy two or more)."
+  }
 }
 
 variable "amazon_linux_ami_ssm_parameter" {
@@ -231,9 +241,14 @@ variable "windows_instance_type" {
 }
 
 variable "windows_server_count" {
-  description = "Number of Windows servers to launch. Round-robined across the chosen AZs."
+  description = "Number of Windows servers to launch (minimum 2). Round-robined across the chosen AZs; the first server is tagged Domain_Controller=Enabled."
   type        = number
-  default     = 1
+  default     = 2
+
+  validation {
+    condition     = var.windows_server_count >= 2
+    error_message = "windows_server_count must be at least 2 (always deploy two or more Windows servers)."
+  }
 }
 
 variable "windows_ami_ssm_parameter" {

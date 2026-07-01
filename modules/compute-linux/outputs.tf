@@ -33,8 +33,9 @@ output "instances_detail" {
       az          = i.availability_zone
       private_ip  = i.private_ip
       public_ip   = i.public_ip
+      distro      = i.tags["Distro"]
       role        = i.tags["Role"]
-      username    = i.tags["Role"] == "ubuntu" ? "ubuntu" : "ec2-user"
+      username    = i.tags["Distro"] == "ubuntu" ? "ubuntu" : "ec2-user"
     }
   }
 }

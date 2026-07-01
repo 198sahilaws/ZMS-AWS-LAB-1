@@ -367,9 +367,9 @@ The number of servers is controlled by **three count variables**, one per OS:
 
 | Variable | OS | Default AMI | Default count |
 |---|---|---|---|
-| `amazon_linux_server_count` | Amazon Linux 2023 | `amazon_linux_ami_ssm_parameter` | `1` |
-| `ubuntu_server_count` | Ubuntu 24.04 | `ubuntu_ami_ssm_parameter` | `1` |
-| `windows_server_count` | Windows Server 2022 | `windows_ami_ssm_parameter` | `1` |
+| `amazon_linux_server_count` | Amazon Linux 2023 | `amazon_linux_ami_ssm_parameter` | `2` (min 2) |
+| `ubuntu_server_count` | Ubuntu 24.04 | `ubuntu_ami_ssm_parameter` | `2` (min 2) |
+| `windows_server_count` | Windows Server 2022 | `windows_ami_ssm_parameter` | `2` (min 2) |
 
 Each OS pool is distributed across the chosen availability zones using **round
 robin**: server *i* of a pool lands in AZ `i % number_of_azs` (the private app
@@ -391,8 +391,18 @@ the control node SG when present. First-boot `user_data` ensures the SSM agent, 
 local admin account from `windows_admin_username`/`windows_admin_password`, and stands
 up a WinRM HTTPS listener (self-signed cert).
 
-Every instance carries the discovery tags **`OS`** (`linux`/`windows`), **`Role`**
-(`amazon`/`ubuntu`/`windows`), and **`Environment`** (from the standard tag set).
+Every instance carries the discovery tags **`OS`** (`linux`/`windows`) and **`Environment`**
+(from the standard tag set). At least **two** of each OS are always deployed. The
+**`Role`** tag is assigned functionally by ordinal **within each OS pool**:
+
+- 1st server → `Role = Database`
+- 2nd server → `Role = Web_Server`
+- 3rd and beyond → `Role = Client`
+
+Linux instances also carry a **`Distro`** tag (`amazon` / `ubuntu`) — this drives the
+SSH login user in Ansible (`amazon` → `ec2-user`, `ubuntu` → `ubuntu`), since `Role` no
+longer encodes the OS flavor. Windows: at least two servers, and the **first** one
+additionally carries **`Domain_Controller = Enabled`** (the others do not).
 
 ---
 
@@ -540,7 +550,7 @@ aws ssm start-session --target "$CTRL_ID"
 
 | Variable | Type | Default | Description |
 |---|---|---|---|
-| `aws_region` | string | `us-east-1` | Region. |
+| `aws_region` | string | `eu-west-3` | Region. |
 | `vpc_cidr` | string | `10.0.0.0/16` | VPC CIDR. |
 | `availability_zones` | list(string) | `[]` | Explicit AZs; empty = first two. |
 | `public_subnet_cidrs` | list(string) | `[]` | Override public CIDRs. |
@@ -567,9 +577,9 @@ aws ssm start-session --target "$CTRL_ID"
 |---|---|---|---|
 | `bastion_instance_type` | string | `t3.micro` | Bastion size. |
 | `bastion_allowed_cidrs` | list(string) | — (**required**) | SSH source CIDRs (≥1); `0.0.0.0/0` allowed but discouraged. |
-| `amazon_linux_server_count` | number | `1` | Number of Amazon Linux servers (round-robined across AZs). |
-| `ubuntu_server_count` | number | `1` | Number of Ubuntu servers (round-robined across AZs). |
-| `windows_server_count` | number | `1` | Number of Windows servers (round-robined across AZs). |
+| `amazon_linux_server_count` | number | `2` | Number of Amazon Linux servers (**min 2**; Role by ordinal: Database/Web_Server/Client). |
+| `ubuntu_server_count` | number | `2` | Number of Ubuntu servers (**min 2**; Role by ordinal: Database/Web_Server/Client). |
+| `windows_server_count` | number | `2` | Number of Windows servers (**minimum 2**, round-robined across AZs). |
 | `linux_instance_type` | string | `t3.medium` | Size for all Linux servers. |
 | `windows_instance_type` | string | `t3.large` | Size for all Windows servers. |
 | `amazon_linux_ami_ssm_parameter` | string | AL2023 SSM param | Amazon Linux AMI source. |

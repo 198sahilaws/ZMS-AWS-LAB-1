@@ -1,3 +1,0 @@
----
-# Ubuntu instances (Role tag = ubuntu) log in as ubuntu.
-ansible_user: ubuntu

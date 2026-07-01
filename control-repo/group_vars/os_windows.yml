@@ -1,15 +1,13 @@
 ---
-# Connection settings for all Windows hosts (group os_windows from the OS tag).
-# WinRM over HTTPS (5986), enabled by the Terraform Windows user-data.
+# Connection settings for the Windows estate (group 'os_windows', keyed off tag OS).
 ansible_connection: winrm
-ansible_port: 5986
-ansible_winrm_transport: ntlm
-# The listener uses a self-signed cert and we connect by private IP, so the cert
-# CN never matches — ignore validation (acceptable for this lab; use "validate"
-# with a trusted/ACM-issued cert in production).
-ansible_winrm_server_cert_validation: ignore
+ansible_port: 5986                # HTTPS listener from Document 1 §7
+ansible_winrm_transport: ntlm     # 'kerberos' if domain-joined; see §6
+ansible_winrm_server_cert_validation: validate   # 'ignore' only for self-signed
+ansible_winrm_message_encryption: auto           # encrypt payload over NTLM/HTTP
 
-# WinRM credential read from the consolidated secret (resolved in group_vars/all.yml
-# as `ansible_credentials`). The secret JSON holds winrm_username / winrm_password.
+# Credentials come from the single consolidated secret resolved in
+# group_vars/all.yml (ansible_credentials). Nothing sensitive is stored in Git;
+# ansible_password is automatically scrubbed from Ansible output/logs.
 ansible_user: "{{ ansible_credentials.winrm_username }}"
 ansible_password: "{{ ansible_credentials.winrm_password }}"
