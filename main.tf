@@ -257,3 +257,57 @@ module "dns" {
     local.ansible_dns_records,
   )
 }
+
+#############################
+# Connection details file (written on apply)
+#############################
+
+locals {
+  # Linux-family hosts: bastion + (optional) control node + Linux servers.
+  conn_linux_hosts = concat(
+    [{
+      name        = "${module.naming.base_name}-bastion-${local.stack_suffix}"
+      instance_id = module.bastion.instance_id
+      subnet_id   = module.network.public_subnet_ids[0]
+      private_ip  = module.bastion.private_ip
+      public_ip   = module.bastion.public_ip
+      username    = "ubuntu"
+    }],
+    var.enable_ansible_control ? [{
+      name        = "${module.naming.base_name}-ansible-control-${local.stack_suffix}"
+      instance_id = module.ansible_control[0].instance_id
+      subnet_id   = module.network.management_subnet_ids[0]
+      private_ip  = module.ansible_control[0].private_ip
+      public_ip   = ""
+      username    = "ubuntu"
+    }] : [],
+    [for k, d in module.compute_linux.instances_detail : {
+      name        = d.name
+      instance_id = d.instance_id
+      subnet_id   = d.subnet_id
+      private_ip  = d.private_ip
+      public_ip   = d.public_ip
+      username    = d.username
+    }],
+  )
+
+  conn_windows_hosts = [for k, d in module.compute_windows.instances_detail : {
+    name        = d.name
+    instance_id = d.instance_id
+    subnet_id   = d.subnet_id
+    private_ip  = d.private_ip
+    public_ip   = d.public_ip
+  }]
+}
+
+resource "local_file" "connection_details" {
+  filename = "${path.root}/connection-details.txt"
+
+  content = templatefile("${path.module}/templates/connection-details.tftpl", {
+    region        = var.aws_region
+    ssh_key_path  = module.keypair.private_key_path
+    windows_user  = nonsensitive(var.windows_admin_username)
+    linux_hosts   = local.conn_linux_hosts
+    windows_hosts = local.conn_windows_hosts
+  })
+}

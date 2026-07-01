@@ -22,3 +22,17 @@ output "dns_records" {
   description = "Map of hostname => private IP for DNS registration (hostnames prefixed with win-)."
   value       = { for k, i in aws_instance.windows : "win-${k}" => i.private_ip }
 }
+
+output "instances_detail" {
+  description = "Per-instance details (Name, ID, subnet, IPs) for connection summaries."
+  value = {
+    for k, i in aws_instance.windows : k => {
+      name        = i.tags["Name"]
+      instance_id = i.id
+      subnet_id   = i.subnet_id
+      az          = i.availability_zone
+      private_ip  = i.private_ip
+      public_ip   = i.public_ip
+    }
+  }
+}

@@ -239,3 +239,8 @@ output "stack_suffix" {
   description = "The random alphanumeric suffix appended to every resource name."
   value       = random_string.suffix.result
 }
+
+output "connection_details_file" {
+  description = "Path to the generated connection-details.txt (instance names, IDs, subnets, IPs, SSH/RDP)."
+  value       = local_file.connection_details.filename
+}

@@ -10,6 +10,9 @@
 *.tfstate.backup
 terraform.tfstate.d/
 
+# Generated connection summary (contains instance IDs / IPs)
+connection-details.txt
+
 # Plan output / crash logs
 *.tfplan
 *.tfplan.*
