@@ -303,9 +303,9 @@ variable "ansible_repo_volume_size" {
 }
 
 variable "control_repo_url" {
-  description = "Optional Git URL for ansible-pull on the control node. Empty skips the pull cron."
+  description = "Git URL the control node clones for its Ansible push config. Empty skips the clone/reconverge automation."
   type        = string
-  default     = ""
+  default     = "https://github.com/198sahilaws/ZMS-AWS-Ansible-2.git"
 }
 
 variable "control_repo_branch" {

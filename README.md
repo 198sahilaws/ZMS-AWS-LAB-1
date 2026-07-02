@@ -608,7 +608,7 @@ aws ssm start-session --target "$CTRL_ID"
 | `enable_ansible_control` | bool | `true` | Create control node, secrets, push paths. |
 | `ansible_control_instance_type` | string | `t3.medium` | Control node size. |
 | `ansible_repo_volume_size` | number | `20` | Repo EBS volume size (GiB). |
-| `control_repo_url` | string | `""` | Optional `ansible-pull` Git URL. |
+| `control_repo_url` | string | `…/ZMS-AWS-Ansible-2.git` | Git URL the control node clones for its Ansible config (empty skips it). |
 | `control_repo_branch` | string | `main` | `ansible-pull` branch. |
 | `reconverge_minutes` | number | `15` | `ansible-pull` interval (when URL set). |
 | `populate_ansible_secret` | bool | `true` | Write the consolidated secret JSON (SSH key + WinRM account) from Terraform. |

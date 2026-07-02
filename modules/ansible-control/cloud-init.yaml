@@ -1,5 +1,5 @@
 #cloud-config
-# Corrected control-node bootstrap for the ZMS-AWS-Ansible-1 (push) repo.
+# Corrected control-node bootstrap for the ZMS-AWS-Ansible-2 (push) repo.
 # Drop-in replacement for modules/ansible-control/cloud-init.yaml in the
 # Terraform repo. Templatefile vars used: control_repo_url, control_repo_branch,
 # aws_region, secret_name, secret_arn.
@@ -30,7 +30,7 @@ runcmd:
   # ansible-core + ansible-galaxy (idempotent if already present).
   - [ bash, -c, "command -v ansible-playbook >/dev/null 2>&1 || (add-apt-repository --yes --update ppa:ansible/ansible && apt-get install -y ansible)" ]
 %{ if control_repo_url != "" ~}
-  # Clone the control repo (ZMS-AWS-Ansible-1) and make it ubuntu-owned.
+  # Clone the control repo (ZMS-AWS-Ansible-2) and make it ubuntu-owned.
   - [ bash, -c, "test -d /opt/control-repo/.git || git clone -b ${control_repo_branch} ${control_repo_url} /opt/control-repo" ]
   - [ bash, -c, "chown -R ubuntu:ubuntu /opt/control-repo && chmod +x /opt/control-repo/scripts/reconverge.sh 2>/dev/null || true" ]
   # Install repo-local collections (amazon.aws, ansible.windows, microsoft.ad, ...).
