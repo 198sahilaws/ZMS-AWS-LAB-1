@@ -2,24 +2,24 @@ locals {
   sfx      = var.suffix == "" ? "" : "-${var.suffix}"
   az_count = length(var.subnet_ids)
 
-  # One pool per Linux OS, each with its own count and AMI.
+  # One pool per Linux OS, each with an explicit list of roles and an AMI.
   pools = {
-    amazon = { count = var.amazon_linux_server_count, ami = var.amazon_linux_ami_ssm_parameter }
-    ubuntu = { count = var.ubuntu_server_count, ami = var.ubuntu_ami_ssm_parameter }
+    amazon = { roles = var.amazon_linux_server_roles, ami = var.amazon_linux_ami_ssm_parameter }
+    ubuntu = { roles = var.ubuntu_server_roles, ami = var.ubuntu_ami_ssm_parameter }
   }
 
-  # Expand each pool into N instances, round-robining the pool index across the
-  # AZ subnets: server i of a pool lands in subnet_ids[i % az_count].
-  # Functional Role by ordinal within each pool: 1st=Database, 2nd=Web_Server,
-  # 3rd+=Client. Distro carries the OS flavor (drives the SSH login user).
+  # Expand each pool into one instance per role entry, round-robining the list
+  # index across the AZ subnets: server i of a pool lands in subnet_ids[i % az_count].
+  # Role is the (lowercase) value the operator assigned -> Role tag -> role_<value>
+  # inventory group. Distro carries the OS flavor (drives the SSH login user).
   pool_maps = [
     for pool, cfg in local.pools : {
-      for i in range(cfg.count) : "${pool}-${i + 1}" => {
+      for idx, role in cfg.roles : "${pool}-${idx + 1}" => {
         ami_param    = cfg.ami
         distro       = pool
-        role         = i == 0 ? "Database" : (i == 1 ? "Web_Server" : "Client")
+        role         = role
         username     = pool == "ubuntu" ? "ubuntu" : "ec2-user"
-        subnet_index = i % local.az_count
+        subnet_index = idx % local.az_count
       }
     }
   ]

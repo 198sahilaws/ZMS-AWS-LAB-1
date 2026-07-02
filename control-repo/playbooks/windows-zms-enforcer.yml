@@ -8,8 +8,8 @@
 #   ansible-playbook playbooks/windows-zms-enforcer.yml --limit win-app01
 #   ansible-playbook playbooks/windows-zms-enforcer.yml -e zms_auto_reboot=true
 #
-# Prereq: create the secret 'ansible-control/zms-provision-nonce' (plain string,
-# the pipe-delimited nonce from the ZMS Console) before running.
+# Prereq: set var.provision_key in terraform.tfvars (the pipe-delimited nonce from
+# the ZMS Console); Terraform writes it to the consolidated secret's provision_key.
 #
 # Mapping from install.ps1:
 #   Get-NonceValue / Set-ProvisionKey  -> Secrets Manager lookup + win_copy
@@ -28,8 +28,10 @@
     installer_path: '{{ zms_temp_dir }}\{{ msi_filename }}'
     msi_log: '{{ zms_temp_dir }}\msiexec.log'
 
-    zms_nonce_secret_id: ansible-control/zms-provision-nonce
-    zms_nonce: "{{ lookup('amazon.aws.aws_secret', zms_nonce_secret_id, region=aws_region) | trim }}"
+    # ZMS provisioning nonce = the 'provision_key' field of the single
+    # consolidated secret (group_vars/all.yml -> ansible_credentials). Set it via
+    # terraform.tfvars (var.provision_key).
+    zms_nonce: "{{ ansible_credentials.provision_key | trim }}"
 
     zms_download_retries: 3
     zms_download_delay: 5

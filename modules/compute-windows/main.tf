@@ -2,13 +2,15 @@ locals {
   sfx      = var.suffix == "" ? "" : "-${var.suffix}"
   az_count = length(var.subnet_ids)
 
-  # Expand the Windows count into instances, round-robining across AZ subnets:
-  # server i lands in subnet_ids[i % az_count]. The first server (i == 0) is the
-  # primary and gets the Domain_Controller tag; the rest do not.
+  # One instance per role entry, round-robining across AZ subnets: server i lands
+  # in subnet_ids[i % az_count]. Role is the (lowercase) value the operator
+  # assigned -> Role tag -> role_<value> inventory group. A "dc" role additionally
+  # gets Domain_Controller=Enabled.
   instances = {
-    for i in range(var.windows_server_count) : tostring(i + 1) => {
-      subnet_index = i % local.az_count
-      is_primary   = i == 0
+    for idx, role in var.windows_server_roles : tostring(idx + 1) => {
+      subnet_index = idx % local.az_count
+      role         = role
+      is_dc        = role == "dc"
     }
   }
 
@@ -151,9 +153,9 @@ resource "aws_instance" "windows" {
     {
       Name = "${var.name_prefix}-windows-${each.key}${local.sfx}"
       OS   = "windows"
-      Role = "windows"
+      Role = each.value.role
     },
-    # Only the first Windows server is tagged as the domain controller.
-    each.value.is_primary ? { Domain_Controller = "Enabled" } : {},
+    # A "dc"-role Windows server is also flagged as the domain controller.
+    each.value.is_dc ? { Domain_Controller = "Enabled" } : {},
   )
 }

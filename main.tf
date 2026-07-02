@@ -124,14 +124,18 @@ module "secrets" {
   source = "./modules/secrets"
   count  = var.enable_ansible_control ? 1 : 0
 
-  name_prefix     = module.naming.base_name
-  suffix          = local.stack_suffix
-  tags            = module.naming.tags
-  ssh_private_key = module.keypair.private_key_pem
-  winrm_username  = var.windows_admin_username
-  winrm_password  = var.windows_admin_password
-  provision_key   = var.provision_key
-  set_secret      = var.populate_ansible_secret
+  name_prefix          = module.naming.base_name
+  suffix               = local.stack_suffix
+  tags                 = module.naming.tags
+  ssh_private_key      = module.keypair.private_key_pem
+  winrm_username       = var.windows_admin_username
+  winrm_password       = var.windows_admin_password
+  provision_key        = var.provision_key
+  dsrm_password        = var.dsrm_password
+  domain_join_username = var.domain_join_username
+  domain_join_password = var.domain_join_password
+  mysql_root_password  = var.mysql_root_password
+  set_secret           = var.populate_ansible_secret
 }
 
 #############################
@@ -204,8 +208,8 @@ module "compute_linux" {
   control_security_group_id      = local.control_security_group_id
   kms_key_id                     = local.ebs_kms_key_id
   instance_type                  = var.linux_instance_type
-  amazon_linux_server_count      = var.amazon_linux_server_count
-  ubuntu_server_count            = var.ubuntu_server_count
+  amazon_linux_server_roles      = var.amazon_linux_server_roles
+  ubuntu_server_roles            = var.ubuntu_server_roles
   amazon_linux_ami_ssm_parameter = var.amazon_linux_ami_ssm_parameter
   ubuntu_ami_ssm_parameter       = var.ubuntu_ami_ssm_parameter
 }
@@ -228,7 +232,7 @@ module "compute_windows" {
   control_security_group_id = local.control_security_group_id
   kms_key_id                = local.ebs_kms_key_id
   instance_type             = var.windows_instance_type
-  windows_server_count      = var.windows_server_count
+  windows_server_roles      = var.windows_server_roles
   windows_ami_ssm_parameter = var.windows_ami_ssm_parameter
   windows_admin_username    = var.windows_admin_username
   windows_admin_password    = var.windows_admin_password

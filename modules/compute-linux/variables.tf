@@ -70,25 +70,25 @@ variable "root_volume_size" {
   default     = 30
 }
 
-variable "amazon_linux_server_count" {
-  description = "Number of Amazon Linux servers (minimum 2; round-robined across AZs). By ordinal: 1st=Database, 2nd=Web_Server, 3rd+=Client (Role tag)."
-  type        = number
-  default     = 2
+variable "amazon_linux_server_roles" {
+  description = "One entry per Amazon Linux server (list length = count, minimum 2). Each lowercase value becomes the Role tag and the role_<value> inventory group (e.g. [\"db\", \"web\"]). Servers are round-robined across AZs by list order."
+  type        = list(string)
+  default     = ["db", "web"]
 
   validation {
-    condition     = var.amazon_linux_server_count >= 2
-    error_message = "amazon_linux_server_count must be at least 2 (always deploy two or more)."
+    condition     = length(var.amazon_linux_server_roles) >= 2
+    error_message = "Provide at least 2 amazon_linux_server_roles (always deploy two or more)."
   }
 }
 
-variable "ubuntu_server_count" {
-  description = "Number of Ubuntu servers (minimum 2; round-robined across AZs). By ordinal: 1st=Database, 2nd=Web_Server, 3rd+=Client (Role tag)."
-  type        = number
-  default     = 2
+variable "ubuntu_server_roles" {
+  description = "One entry per Ubuntu server (list length = count, minimum 2). Each lowercase value becomes the Role tag and the role_<value> inventory group (e.g. [\"db\", \"web\"])."
+  type        = list(string)
+  default     = ["db", "web"]
 
   validation {
-    condition     = var.ubuntu_server_count >= 2
-    error_message = "ubuntu_server_count must be at least 2 (always deploy two or more)."
+    condition     = length(var.ubuntu_server_roles) >= 2
+    error_message = "Provide at least 2 ubuntu_server_roles (always deploy two or more)."
   }
 }
 

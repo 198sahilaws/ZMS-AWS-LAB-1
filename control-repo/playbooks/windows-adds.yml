@@ -16,9 +16,19 @@
   vars:
     ad_domain_name: alcor.co.in
     ad_domain_netbios: ALCOR
-    dsrm_secret_id: ansible-control/adds-dsrm-password
-    dsrm_password: "{{ lookup('amazon.aws.aws_secret', dsrm_secret_id, region=aws_region) }}"
+    # DSRM / safe-mode password from the single consolidated secret
+    # (group_vars/all.yml -> ansible_credentials), key: dsrm_password.
+    dsrm_password: "{{ ansible_credentials.dsrm_password }}"
   tasks:
+    - name: Assert the DSRM password is present in the consolidated secret
+      ansible.builtin.assert:
+        that:
+          - dsrm_password | length > 0
+        fail_msg: >-
+          dsrm_password is empty. Set var.dsrm_password in terraform.tfvars so it
+          is written to the consolidated secret before promoting the forest.
+      no_log: true
+
     - name: Install AD DS role and management tools
       ansible.windows.win_feature:
         name: AD-Domain-Services

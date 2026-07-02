@@ -77,14 +77,14 @@ variable "root_volume_size" {
   default     = 50
 }
 
-variable "windows_server_count" {
-  description = "Number of Windows servers to launch (minimum 2; round-robined across AZs). The first is tagged Domain_Controller=Enabled."
-  type        = number
-  default     = 2
+variable "windows_server_roles" {
+  description = "One entry per Windows server (list length = count, minimum 2). Each lowercase value becomes the Role tag and the role_<value> inventory group (e.g. [\"dc\", \"web\"]). A server whose role is \"dc\" also gets Domain_Controller=Enabled. Round-robined across AZs by list order."
+  type        = list(string)
+  default     = ["dc", "web"]
 
   validation {
-    condition     = var.windows_server_count >= 2
-    error_message = "windows_server_count must be at least 2 (always deploy two or more Windows servers)."
+    condition     = length(var.windows_server_roles) >= 2
+    error_message = "Provide at least 2 windows_server_roles (always deploy two or more Windows servers)."
   }
 }
 

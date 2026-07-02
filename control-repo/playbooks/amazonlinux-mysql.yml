@@ -23,7 +23,9 @@
     mysql_repo_rpm: "https://dev.mysql.com/get/mysql84-community-release-el9-1.noarch.rpm"
     # MySQL's current RPM signing key; point at an internal mirror if preferred.
     mysql_gpg_key: "https://repo.mysql.com/RPM-GPG-KEY-mysql-2023"
-    mysql_root_password: ""
+    # Root password from the single consolidated secret (group_vars/all.yml ->
+    # ansible_credentials). Empty (default) skips the root-password step.
+    mysql_root_password: "{{ ansible_credentials.mysql_root_password | default('', true) }}"
   tasks:
     - name: Skip non-RedHat-family hosts
       ansible.builtin.meta: end_host

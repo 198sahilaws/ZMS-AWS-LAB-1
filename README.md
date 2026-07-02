@@ -361,28 +361,33 @@ Both compute modules launch into the private application subnets, with no public
 IMDSv2 enforced, KMS-encrypted root volumes, and the SSM instance profile. AMIs resolve
 from SSM public parameters.
 
-### Server counts & round-robin AZ placement
+### Servers, explicit roles & round-robin AZ placement
 
-The number of servers is controlled by **three count variables**, one per OS:
+The estate is defined by **three role-list variables**, one per OS. Each list has
+**one entry per server** (list length = server count, minimum 2), and the value is
+that server's **role**:
 
-| Variable | OS | Default AMI | Default count |
+| Variable | OS | Default AMI | Default |
 |---|---|---|---|
-| `amazon_linux_server_count` | Amazon Linux 2023 | `amazon_linux_ami_ssm_parameter` | `2` (min 2) |
-| `ubuntu_server_count` | Ubuntu 24.04 | `ubuntu_ami_ssm_parameter` | `2` (min 2) |
-| `windows_server_count` | Windows Server 2022 | `windows_ami_ssm_parameter` | `2` (min 2) |
+| `amazon_linux_server_roles` | Amazon Linux 2023 | `amazon_linux_ami_ssm_parameter` | `["db", "web"]` |
+| `ubuntu_server_roles` | Ubuntu 24.04 | `ubuntu_ami_ssm_parameter` | `["db", "web"]` |
+| `windows_server_roles` | Windows Server 2022 | `windows_ami_ssm_parameter` | `["dc", "web"]` |
 
-Each OS pool is distributed across the chosen availability zones using **round
-robin**: server *i* of a pool lands in AZ `i % number_of_azs` (the private app
-subnets are one-per-AZ). Pools are placed independently — each starts at the first
-AZ. For example, with two AZs and `amazon_linux_server_count = 3`:
+Roles are **lowercase canonical values** — `dc`, `web`, `db`, `fileserver`, `client` —
+chosen so each becomes the `Role` tag and therefore the **`role_<value>`** Ansible
+inventory group (e.g. `Role=web` → group `role_web`), which is exactly what the control
+repo's playbooks target (`role_dc`, `role_web`, `role_db`, `role_fileserver`).
+
+Each OS list is distributed across the chosen availability zones using **round robin**
+by list order: server *i* lands in AZ `i % number_of_azs`. For example,
+`windows_server_roles = ["dc", "web", "fileserver"]` with two AZs:
 
 ```
-amazon-1 → AZ-a    amazon-2 → AZ-b    amazon-3 → AZ-a
+windows-1 (dc) → AZ-a    windows-2 (web) → AZ-b    windows-3 (fileserver) → AZ-a
 ```
 
-Instances are named `…-linux-amazon-1`, `…-linux-ubuntu-2`, `…-windows-1`, etc.;
-DNS records follow as `linux-amazon-1`, `win-1`, and so on. The number of AZs is set
-by `availability_zones` / `az_count`.
+Instances are named `…-linux-amazon-1`, `…-windows-2`, etc.; the number of AZs is set by
+`availability_zones` / `az_count`.
 
 **Linux SG** — SSH (22) from the bastion SG, and from the control node SG when present.
 
@@ -391,18 +396,13 @@ the control node SG when present. First-boot `user_data` ensures the SSM agent, 
 local admin account from `windows_admin_username`/`windows_admin_password`, and stands
 up a WinRM HTTPS listener (self-signed cert).
 
-Every instance carries the discovery tags **`OS`** (`linux`/`windows`) and **`Environment`**
-(from the standard tag set). At least **two** of each OS are always deployed. The
-**`Role`** tag is assigned functionally by ordinal **within each OS pool**:
-
-- 1st server → `Role = Database`
-- 2nd server → `Role = Web_Server`
-- 3rd and beyond → `Role = Client`
-
-Linux instances also carry a **`Distro`** tag (`amazon` / `ubuntu`) — this drives the
-SSH login user in Ansible (`amazon` → `ec2-user`, `ubuntu` → `ubuntu`), since `Role` no
-longer encodes the OS flavor. Windows: at least two servers, and the **first** one
-additionally carries **`Domain_Controller = Enabled`** (the others do not).
+Every instance carries the discovery tags **`OS`** (`linux`/`windows`), **`Role`** (the
+lowercase value you assigned), and **`Environment`** (from the standard tag set). At
+least **two** of each OS are always deployed (list length ≥ 2). A Windows server whose
+role is **`dc`** additionally carries **`Domain_Controller = Enabled`**. Linux instances
+also carry a **`Distro`** tag (`amazon` / `ubuntu`) — this drives the SSH login user in
+Ansible (`amazon` → `ec2-user`, `ubuntu` → `ubuntu`), since `Role` no longer encodes the
+OS flavor.
 
 ---
 
@@ -422,15 +422,27 @@ The `secrets` module creates **one consolidated Secrets Manager secret per deplo
 Ansible credentials:
 
 ```json
-{ "ssh_private_key": "<PEM>", "winrm_username": "...", "winrm_password": "...", "provision_key": "<nonce>" }
+{
+  "ssh_private_key": "<PEM>",
+  "winrm_username": "...",
+  "winrm_password": "...",
+  "provision_key": "<ZMS/provisioning nonce>",
+  "dsrm_password": "...",
+  "domain_join_username": "ALCOR\\joinadmin",
+  "domain_join_password": "...",
+  "mysql_root_password": "..."
+}
 ```
 
-The `ssh_private_key` is mirrored from the generated key pair, the WinRM fields come
-from `windows_admin_username`/`windows_admin_password`, and `provision_key` is an
-arbitrary provisioning nonce (`var.provision_key`) — so the bundle is self-contained.
-`populate_ansible_secret` (default `true`) writes the value; set it `false` to create an
-empty container and set the JSON out of band. `recovery_window_in_days` (default 7)
-controls delete behaviour.
+**Every Ansible playbook reads this one secret** (via `ansible_credentials.<key>`) — no
+per-playbook secret IDs. `ssh_private_key` is mirrored from the generated key pair and
+the WinRM fields from `windows_admin_username`/`windows_admin_password`; the rest are
+driven by `terraform.tfvars` (`provision_key`, `dsrm_password`, `domain_join_username`,
+`domain_join_password`, `mysql_root_password`) and default to empty. `provision_key`
+doubles as the ZMS Enforcer nonce. The secret **name** is fed to the control node at
+deploy time via the injected `ANSIBLE_SECRET_NAME`. `populate_ansible_secret` (default
+`true`) writes the value; set it `false` to create an empty container and set the JSON
+out of band. `recovery_window_in_days` (default 7) controls delete behaviour.
 
 ---
 
@@ -577,9 +589,9 @@ aws ssm start-session --target "$CTRL_ID"
 |---|---|---|---|
 | `bastion_instance_type` | string | `t3.micro` | Bastion size. |
 | `bastion_allowed_cidrs` | list(string) | — (**required**) | SSH source CIDRs (≥1); `0.0.0.0/0` allowed but discouraged. |
-| `amazon_linux_server_count` | number | `2` | Number of Amazon Linux servers (**min 2**; Role by ordinal: Database/Web_Server/Client). |
-| `ubuntu_server_count` | number | `2` | Number of Ubuntu servers (**min 2**; Role by ordinal: Database/Web_Server/Client). |
-| `windows_server_count` | number | `2` | Number of Windows servers (**minimum 2**, round-robined across AZs). |
+| `amazon_linux_server_roles` | list(string) | `["db","web"]` | One entry per Amazon Linux server (**≥2**); lowercase role → `Role` tag → `role_<value>` group. |
+| `ubuntu_server_roles` | list(string) | `["db","web"]` | One entry per Ubuntu server (**≥2**); lowercase role → `Role` tag / group. |
+| `windows_server_roles` | list(string) | `["dc","web"]` | One entry per Windows server (**≥2**); `dc` also gets `Domain_Controller=Enabled`. |
 | `linux_instance_type` | string | `t3.medium` | Size for all Linux servers. |
 | `windows_instance_type` | string | `t3.large` | Size for all Windows servers. |
 | `amazon_linux_ami_ssm_parameter` | string | AL2023 SSM param | Amazon Linux AMI source. |
@@ -601,9 +613,10 @@ aws ssm start-session --target "$CTRL_ID"
 | `reconverge_minutes` | number | `15` | `ansible-pull` interval (when URL set). |
 | `populate_ansible_secret` | bool | `true` | Write the consolidated secret JSON (SSH key + WinRM account) from Terraform. |
 
-Server counts default to `1` per OS; set them to `0` to deploy none of that OS.
-With `N` servers and `A` AZs, server `i` (0-indexed within its OS pool) is placed in
-AZ `i % A`.
+Each `*_server_roles` list has one entry per server (length ≥ 2). With `N` entries and
+`A` AZs, server `i` (0-indexed) is placed in AZ `i % A`. Assign roles from the canonical
+set (`dc`, `web`, `db`, `fileserver`, `client`) so the `role_<value>` groups match the
+control-repo playbooks.
 
 ---
 
@@ -659,12 +672,12 @@ A condensed view of each module's variables (root passes these via the wiring in
 - **compute-linux** — `name_prefix`, `suffix`, `tags`, `vpc_id`, `vpc_cidr`,
   `subnet_ids`, `key_name`, `iam_instance_profile`, `bastion_security_group_id`,
   `control_security_group_id`, `kms_key_id`, `instance_type`, `root_volume_size`,
-  `amazon_linux_server_count`, `ubuntu_server_count`, `amazon_linux_ami_ssm_parameter`,
+  `amazon_linux_server_roles`, `ubuntu_server_roles`, `amazon_linux_ami_ssm_parameter`,
   `ubuntu_ami_ssm_parameter`.
 - **compute-windows** — `name_prefix`, `suffix`, `tags`, `vpc_id`, `vpc_cidr`,
   `subnet_ids`, `iam_instance_profile`, `bastion_security_group_id`,
   `control_security_group_id`, `kms_key_id`, `instance_type`, `root_volume_size`,
-  `windows_server_count`, `windows_ami_ssm_parameter`, `windows_admin_username`,
+  `windows_server_roles`, `windows_ami_ssm_parameter`, `windows_admin_username`,
   `windows_admin_password`.
 - **dns** — `name_prefix`, `suffix`, `tags`, `vpc_id`, `zone_name`, `instance_records`,
   `record_ttl`.
@@ -679,10 +692,9 @@ A condensed view of each module's variables (root passes these via the wiring in
 | Retag everything | `tags`, `owner`, `project`, `cost_center` |
 | Change network size/layout | `vpc_cidr`, `*_subnet_cidrs`, `availability_zones` |
 | Cheaper non-prod networking | `single_nat_gateway = true` |
-| Add/remove servers per OS | `amazon_linux_server_count`, `ubuntu_server_count`, `windows_server_count` |
+| Add/remove servers + assign roles | `amazon_linux_server_roles`, `ubuntu_server_roles`, `windows_server_roles` (list entry per server) |
 | Resize servers / pick AMIs | `linux_instance_type`, `windows_instance_type`, `*_ami_ssm_parameter` |
 | Spread servers over more AZs | `availability_zones` / `az_count` (round-robin follows automatically) |
-| Tag a host with a role | add `role = "web"` to its `*_instances` entry |
 | Lock down / open SSH source | `bastion_allowed_cidrs` |
 | Disable the Ansible control node | `enable_ansible_control = false` |
 | Auto-pull Ansible content | `control_repo_url`, `control_repo_branch`, `reconverge_minutes` |

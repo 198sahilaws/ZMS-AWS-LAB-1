@@ -196,25 +196,25 @@ variable "linux_instance_type" {
   default     = "t3.medium"
 }
 
-variable "amazon_linux_server_count" {
-  description = "Number of Amazon Linux servers (minimum 2). Round-robined across AZs; Role tag by ordinal: 1st=Database, 2nd=Web_Server, 3rd+=Client."
-  type        = number
-  default     = 2
+variable "amazon_linux_server_roles" {
+  description = "One entry per Amazon Linux server (list length = count, min 2). Lowercase canonical role becomes the Role tag and the role_<value> Ansible group. Canonical values: dc, web, db, fileserver, client. e.g. [\"db\", \"web\"]."
+  type        = list(string)
+  default     = ["db", "web"]
 
   validation {
-    condition     = var.amazon_linux_server_count >= 2
-    error_message = "amazon_linux_server_count must be at least 2 (always deploy two or more)."
+    condition     = length(var.amazon_linux_server_roles) >= 2
+    error_message = "Provide at least 2 amazon_linux_server_roles (always deploy two or more)."
   }
 }
 
-variable "ubuntu_server_count" {
-  description = "Number of Ubuntu servers (minimum 2). Round-robined across AZs; Role tag by ordinal: 1st=Database, 2nd=Web_Server, 3rd+=Client."
-  type        = number
-  default     = 2
+variable "ubuntu_server_roles" {
+  description = "One entry per Ubuntu server (list length = count, min 2). Lowercase canonical role -> Role tag / role_<value> group. e.g. [\"db\", \"web\"]."
+  type        = list(string)
+  default     = ["db", "web"]
 
   validation {
-    condition     = var.ubuntu_server_count >= 2
-    error_message = "ubuntu_server_count must be at least 2 (always deploy two or more)."
+    condition     = length(var.ubuntu_server_roles) >= 2
+    error_message = "Provide at least 2 ubuntu_server_roles (always deploy two or more)."
   }
 }
 
@@ -240,14 +240,14 @@ variable "windows_instance_type" {
   default     = "t3.large"
 }
 
-variable "windows_server_count" {
-  description = "Number of Windows servers to launch (minimum 2). Round-robined across the chosen AZs; the first server is tagged Domain_Controller=Enabled."
-  type        = number
-  default     = 2
+variable "windows_server_roles" {
+  description = "One entry per Windows server (list length = count, min 2). Lowercase canonical role -> Role tag / role_<value> group; a \"dc\" role also gets Domain_Controller=Enabled. Canonical values: dc, web, fileserver, client. e.g. [\"dc\", \"web\"]."
+  type        = list(string)
+  default     = ["dc", "web"]
 
   validation {
-    condition     = var.windows_server_count >= 2
-    error_message = "windows_server_count must be at least 2 (always deploy two or more Windows servers)."
+    condition     = length(var.windows_server_roles) >= 2
+    error_message = "Provide at least 2 windows_server_roles (always deploy two or more)."
   }
 }
 
@@ -327,8 +327,39 @@ variable "populate_ansible_secret" {
 }
 
 variable "provision_key" {
-  description = "Arbitrary provisioning nonce stored in the consolidated secret under the key 'provision_key'. Override via tfvars / TF_VAR_provision_key for real values."
+  description = "Arbitrary provisioning nonce (also the ZMS Enforcer nonce) stored in the consolidated secret under 'provision_key'. Override via tfvars / TF_VAR_provision_key for real values."
   type        = string
   sensitive   = true
   default     = "4|prod.zpath.net|1IcW2jdD3L1H6nk7FGniTJBzVm/gjIGk7GerjyW6NqQjhy2B7X+c//QG7GRqGZuIW6gfi7p7QIEHwHhCkEHc6YYfzoBWgbzKqpyWqEmLFvQew5EHM+ehID4UnwD02dJotI79PCG2YvsIX0xrnNP59WaEN3+et3R3uiMLSqBM8D7y5CDRiMTerVqAd9Yw5aYfVS8YW8Qdyie6xVPF2AtNhk2/wZxbxP8VJTo2C9dOvdblFwy/oF4Z2C6oDTf0RmF/seUOcKB60WhheLolEeK8gCJgtaicwXSkKpOdRjJj36f8oeWf0sw2IL2LCYW672Hw8wHs5DyJyWv5GaeIwO6ODOe+PaOBCHmq7cTzstpvKIDKA73y8P7RYWCIoUlnazWO|288263465653501953|1"
+}
+
+# Additional credentials folded into the single consolidated secret. All
+# sensitive, all default to empty — set them in terraform.tfvars (or via
+# TF_VAR_*) for the playbooks that need them.
+variable "dsrm_password" {
+  description = "AD DS DSRM / safe-mode password used by playbooks/windows-adds.yml (consolidated secret key 'dsrm_password')."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "domain_join_username" {
+  description = "Domain-join account, e.g. ALCOR\\joinadmin (consolidated secret key 'domain_join_username')."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "domain_join_password" {
+  description = "Password for the domain-join account (consolidated secret key 'domain_join_password')."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "mysql_root_password" {
+  description = "MySQL root password used by the mysql playbooks (consolidated secret key 'mysql_root_password')."
+  type        = string
+  sensitive   = true
+  default     = ""
 }

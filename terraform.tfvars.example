@@ -44,13 +44,15 @@ bastion_allowed_cidrs = ["203.0.113.10/32"] # <-- replace with YOUR admin IP /32
 # ---- Encryption -------------------------------------------------------------
 create_kms_key = true
 
-# ---- Compute server counts (round-robined across the chosen AZs) ------------
-# Each OS gets a count; servers are distributed across availability_zones using
-# round robin (server i -> AZ[i % number_of_azs]).
-# Linux: minimum 2 each. Role tag by ordinal per OS: 1st=Database, 2nd=Web_Server, 3rd+=Client.
-amazon_linux_server_count = 2
-ubuntu_server_count       = 2
-windows_server_count      = 2 # minimum 2; first Windows server is tagged Domain_Controller=Enabled
+# ---- Compute servers: one list entry per server, value = that server's role -
+# List length = number of servers (minimum 2 each). Servers are round-robined
+# across availability_zones by list order. Each lowercase role becomes the Role
+# tag and the role_<value> Ansible inventory group (matches the playbooks).
+# Canonical roles: dc, web, db, fileserver, client.
+# A Windows server whose role is "dc" also gets Domain_Controller=Enabled.
+amazon_linux_server_roles = ["db", "web"]
+ubuntu_server_roles       = ["db", "web"]
+windows_server_roles      = ["dc", "web"] # e.g. ["dc", "web", "fileserver"] for 3
 
 # ---- Linux compute ----------------------------------------------------------
 linux_instance_type = "t3.medium"
@@ -85,6 +87,15 @@ reconverge_minutes  = 15
 # and set the JSON value out of band instead.
 populate_ansible_secret = true
 
-# Arbitrary provisioning nonce stored under the secret's "provision_key" key.
-# Has a default; override here or via TF_VAR_provision_key for real values.
+# Arbitrary provisioning nonce (also the ZMS Enforcer nonce) stored under the
+# secret's "provision_key" key. Has a default; override here or via TF_VAR_.
 # provision_key = "4|prod.zpath.net|...|288263465653501953|1"
+
+# ---- Extra credentials folded into the ONE consolidated secret --------------
+# All optional (default empty). Terraform writes them as key/value pairs in the
+# single secret; the playbooks read them via ansible_credentials.<key>. Prefer
+# supplying these via TF_VAR_* env vars rather than committing them here.
+# dsrm_password        = "..."                 # windows-adds  (DSRM/safe-mode)
+# domain_join_username = "ALCOR\\joinadmin"    # windows-domain-join
+# domain_join_password = "..."                 # windows-domain-join
+# mysql_root_password  = "..."                 # ubuntu/amazonlinux mysql

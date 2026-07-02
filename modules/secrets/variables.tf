@@ -37,7 +37,35 @@ variable "winrm_password" {
 }
 
 variable "provision_key" {
-  description = "Arbitrary provisioning nonce stored under the provision_key key of the consolidated secret."
+  description = "Arbitrary provisioning nonce (also used as the ZMS Enforcer nonce) stored under the provision_key key of the consolidated secret."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "dsrm_password" {
+  description = "AD DS DSRM / safe-mode password (windows-adds) stored under dsrm_password."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "domain_join_username" {
+  description = "Domain-join account (e.g. ALCOR\\joinadmin) stored under domain_join_username."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "domain_join_password" {
+  description = "Domain-join account password stored under domain_join_password."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "mysql_root_password" {
+  description = "MySQL root password (ubuntu/amazonlinux mysql playbooks) stored under mysql_root_password."
   type        = string
   default     = ""
   sensitive   = true

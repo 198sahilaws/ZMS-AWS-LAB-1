@@ -3,7 +3,10 @@
 ansible_connection: winrm
 ansible_port: 5986                # HTTPS listener from Document 1 §7
 ansible_winrm_transport: ntlm     # 'kerberos' if domain-joined; see §6
-ansible_winrm_server_cert_validation: validate   # 'ignore' only for self-signed
+# Terraform stands up a self-signed WinRM listener and we connect by private IP,
+# so cert validation must be 'ignore' for this lab. Use 'validate' with a
+# trusted/ACM-issued cert (and connect by the matching DNS name) in production.
+ansible_winrm_server_cert_validation: ignore
 ansible_winrm_message_encryption: auto           # encrypt payload over NTLM/HTTP
 
 # Credentials come from the single consolidated secret resolved in
