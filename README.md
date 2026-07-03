@@ -542,6 +542,28 @@ CTRL_ID=$(terraform output -raw ansible_control_instance_id)
 aws ssm start-session --target "$CTRL_ID"
 ```
 
+### Troubleshooting: SSH key permissions on Windows
+
+If `ssh` rejects the generated `.pem` with **"UNPROTECTED PRIVATE KEY FILE!"** /
+**"permissions are too open"** / *"Bad permissions … NT AUTHORITY\Authenticated
+Users"*, the key file's Windows ACL is too broad. Unix `0600` mode bits (what
+`local_sensitive_file` sets) are ignored on Windows — OpenSSH enforces ACLs instead.
+
+Terraform now repairs this automatically: the keypair module runs
+`terraform_data.key_permissions`, which resets the key's ACL after writing it
+(`icacls` on Windows, `chmod` on Linux/macOS). It runs on every `terraform apply`
+and re-runs whenever the key is regenerated.
+
+To fix an existing key immediately (same command Terraform runs), in **PowerShell**:
+
+```powershell
+icacls "<path>\<key_name>.pem" /inheritance:r /grant:r "$($env:USERNAME):(R)"
+```
+
+`/inheritance:r` strips the inherited `Authenticated Users` access; `/grant:r`
+leaves read access for only the current user — which is exactly what OpenSSH
+requires. On Linux/macOS the equivalent is `chmod 600 <key_name>.pem`.
+
 ---
 
 ## Root input variables
