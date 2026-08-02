@@ -31,8 +31,9 @@ variable "subnet_id" {
 }
 
 variable "bastion_security_group_id" {
-  description = "Bastion SG ID; the control node accepts admin SSH only from the bastion."
+  description = "Bastion SG ID; the control node accepts admin SSH from the bastion. Null when no Linux bastion is deployed (reach via SSM Session Manager)."
   type        = string
+  default     = null
 }
 
 variable "key_name" {

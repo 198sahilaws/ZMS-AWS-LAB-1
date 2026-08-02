@@ -41,12 +41,16 @@ resource "aws_security_group" "linux" {
   description = "Linux workloads: SSH from bastion only, egress within VPC"
   vpc_id      = var.vpc_id
 
-  ingress {
-    description     = "SSH from the bastion security group"
-    from_port       = 22
-    to_port         = 22
-    protocol        = "tcp"
-    security_groups = [var.bastion_security_group_id]
+  # SSH from the bastion SG (only when a bastion is deployed).
+  dynamic "ingress" {
+    for_each = var.bastion_security_group_id != null ? [1] : []
+    content {
+      description     = "SSH from the bastion security group"
+      from_port       = 22
+      to_port         = 22
+      protocol        = "tcp"
+      security_groups = [var.bastion_security_group_id]
+    }
   }
 
   # Ansible push path: SSH from the control node SG (only when provided).

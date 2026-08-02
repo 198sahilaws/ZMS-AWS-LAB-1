@@ -25,12 +25,17 @@ resource "aws_security_group" "control" {
   description = "Ansible control node: admin SSH from bastion; egress to managed hosts and repos"
   vpc_id      = var.vpc_id
 
-  ingress {
-    description     = "Admin SSH from the bastion security group"
-    from_port       = 22
-    to_port         = 22
-    protocol        = "tcp"
-    security_groups = [var.bastion_security_group_id]
+  # Admin SSH from the bastion SG (only when a bastion is deployed; otherwise the
+  # control node is reachable via SSM Session Manager).
+  dynamic "ingress" {
+    for_each = var.bastion_security_group_id != null ? [1] : []
+    content {
+      description     = "Admin SSH from the bastion security group"
+      from_port       = 22
+      to_port         = 22
+      protocol        = "tcp"
+      security_groups = [var.bastion_security_group_id]
+    }
   }
 
   egress {

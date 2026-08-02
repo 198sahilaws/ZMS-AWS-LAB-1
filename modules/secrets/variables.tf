@@ -71,6 +71,13 @@ variable "mysql_root_password" {
   sensitive   = true
 }
 
+variable "samba_password" {
+  description = "Samba/SMB share account password (linux-fileshare playbook) stored under samba_password."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
 variable "set_secret" {
   description = "Populate the consolidated secret value from the inputs above. When false, only the empty container is created and the value is set out of band."
   type        = bool

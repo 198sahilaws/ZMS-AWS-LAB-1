@@ -41,6 +41,13 @@ private_dns_zone_name = "internal.example.local"
 bastion_instance_type = "t3.micro"
 bastion_allowed_cidrs = ["203.0.113.10/32"] # <-- replace with YOUR admin IP /32
 
+# Bastion toggles. The Linux (SSH) bastion is on by default; the Windows (RDP)
+# bastion is off. Disabling the Linux bastion means workloads/control node are
+# reached in-VPC (e.g. SSM Session Manager). bastion_allowed_cidrs governs both.
+enable_linux_bastion          = true
+enable_windows_bastion        = false
+# windows_bastion_instance_type = "t3.medium"
+
 # ---- Encryption -------------------------------------------------------------
 create_kms_key = true
 
@@ -48,11 +55,12 @@ create_kms_key = true
 # List length = number of servers (minimum 2 each). Servers are round-robined
 # across availability_zones by list order. Each lowercase role becomes the Role
 # tag and the role_<value> Ansible inventory group (matches the playbooks).
-# Canonical roles: dc, web, db, fileserver, client.
-# A Windows server whose role is "dc" also gets Domain_Controller=Enabled.
+# 2-10 entries per OS. Allowed Linux roles: db, web, fileshare, client.
+# Allowed Windows roles: dc, rodc, fileshare, web, client (must include >=1 dc).
+# A Windows "dc" or "rodc" also gets Domain_Controller=Enabled.
 amazon_linux_server_roles = ["db", "web"]
 ubuntu_server_roles       = ["db", "web"]
-windows_server_roles      = ["dc", "web"] # e.g. ["dc", "web", "fileserver"] for 3
+windows_server_roles      = ["dc", "web"] # e.g. ["dc", "rodc", "web", "fileshare"] for 4
 
 # ---- Linux compute ----------------------------------------------------------
 linux_instance_type = "t3.medium"
@@ -99,3 +107,4 @@ populate_ansible_secret = true
 # domain_join_username = "ALCOR\\joinadmin"    # windows-domain-join
 # domain_join_password = "..."                 # windows-domain-join
 # mysql_root_password  = "..."                 # ubuntu/amazonlinux mysql
+# samba_password       = "..."                 # linux-fileshare (Samba account)

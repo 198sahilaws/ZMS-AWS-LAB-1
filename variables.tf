@@ -170,9 +170,27 @@ variable "kms_key_id" {
 #############################
 
 variable "bastion_instance_type" {
-  description = "Instance type for the bastion host."
+  description = "Instance type for the Linux bastion host."
   type        = string
   default     = "t3.micro"
+}
+
+variable "enable_linux_bastion" {
+  description = "Deploy the Ubuntu (SSH) bastion. When false, no Linux bastion is created and workloads/control node are reachable only in-VPC (e.g. SSM Session Manager)."
+  type        = bool
+  default     = true
+}
+
+variable "enable_windows_bastion" {
+  description = "Deploy a Windows Server (RDP) bastion in a public subnet for RDP into the Windows estate. Tagged OS=bastion so Ansible ignores it."
+  type        = bool
+  default     = false
+}
+
+variable "windows_bastion_instance_type" {
+  description = "Instance type for the Windows bastion host."
+  type        = string
+  default     = "t3.medium"
 }
 
 variable "bastion_allowed_cidrs" {
@@ -197,24 +215,32 @@ variable "linux_instance_type" {
 }
 
 variable "amazon_linux_server_roles" {
-  description = "One entry per Amazon Linux server (list length = count, min 2). Lowercase canonical role becomes the Role tag and the role_<value> Ansible group. Canonical values: dc, web, db, fileserver, client. e.g. [\"db\", \"web\"]."
+  description = "One entry per Amazon Linux server (list length = count, 2-10). Lowercase canonical role becomes the Role tag and the role_<value> Ansible group. Allowed Linux roles: db, web, fileshare, client. e.g. [\"db\", \"web\"]."
   type        = list(string)
   default     = ["db", "web"]
 
   validation {
-    condition     = length(var.amazon_linux_server_roles) >= 2
-    error_message = "Provide at least 2 amazon_linux_server_roles (always deploy two or more)."
+    condition     = length(var.amazon_linux_server_roles) >= 2 && length(var.amazon_linux_server_roles) <= 10
+    error_message = "Provide between 2 and 10 amazon_linux_server_roles."
+  }
+  validation {
+    condition     = alltrue([for r in var.amazon_linux_server_roles : contains(["db", "web", "fileshare", "client"], r)])
+    error_message = "Allowed Linux roles are: db, web, fileshare, client."
   }
 }
 
 variable "ubuntu_server_roles" {
-  description = "One entry per Ubuntu server (list length = count, min 2). Lowercase canonical role -> Role tag / role_<value> group. e.g. [\"db\", \"web\"]."
+  description = "One entry per Ubuntu server (list length = count, 2-10). Lowercase canonical role -> Role tag / role_<value> group. Allowed Linux roles: db, web, fileshare, client. e.g. [\"db\", \"web\"]."
   type        = list(string)
   default     = ["db", "web"]
 
   validation {
-    condition     = length(var.ubuntu_server_roles) >= 2
-    error_message = "Provide at least 2 ubuntu_server_roles (always deploy two or more)."
+    condition     = length(var.ubuntu_server_roles) >= 2 && length(var.ubuntu_server_roles) <= 10
+    error_message = "Provide between 2 and 10 ubuntu_server_roles."
+  }
+  validation {
+    condition     = alltrue([for r in var.ubuntu_server_roles : contains(["db", "web", "fileshare", "client"], r)])
+    error_message = "Allowed Linux roles are: db, web, fileshare, client."
   }
 }
 
@@ -241,13 +267,21 @@ variable "windows_instance_type" {
 }
 
 variable "windows_server_roles" {
-  description = "One entry per Windows server (list length = count, min 2). Lowercase canonical role -> Role tag / role_<value> group; a \"dc\" role also gets Domain_Controller=Enabled. Canonical values: dc, web, fileserver, client. e.g. [\"dc\", \"web\"]."
+  description = "One entry per Windows server (list length = count, 2-10). Lowercase canonical role -> Role tag / role_<value> group; a \"dc\" or \"rodc\" role also gets Domain_Controller=Enabled. Allowed Windows roles: dc, rodc, fileshare, web, client. Must include at least one \"dc\". e.g. [\"dc\", \"web\"]."
   type        = list(string)
   default     = ["dc", "web"]
 
   validation {
-    condition     = length(var.windows_server_roles) >= 2
-    error_message = "Provide at least 2 windows_server_roles (always deploy two or more)."
+    condition     = length(var.windows_server_roles) >= 2 && length(var.windows_server_roles) <= 10
+    error_message = "Provide between 2 and 10 windows_server_roles."
+  }
+  validation {
+    condition     = alltrue([for r in var.windows_server_roles : contains(["dc", "rodc", "fileshare", "web", "client"], r)])
+    error_message = "Allowed Windows roles are: dc, rodc, fileshare, web, client."
+  }
+  validation {
+    condition     = contains(var.windows_server_roles, "dc")
+    error_message = "windows_server_roles must include at least one 'dc' (the forest root domain controller)."
   }
 }
 
@@ -359,6 +393,13 @@ variable "domain_join_password" {
 
 variable "mysql_root_password" {
   description = "MySQL root password used by the mysql playbooks (consolidated secret key 'mysql_root_password')."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "samba_password" {
+  description = "Samba/SMB share account password used by the linux-fileshare playbook (consolidated secret key 'samba_password')."
   type        = string
   sensitive   = true
   default     = ""

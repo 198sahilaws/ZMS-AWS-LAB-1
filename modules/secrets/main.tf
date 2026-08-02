@@ -31,5 +31,6 @@ resource "aws_secretsmanager_secret_version" "ansible" {
     domain_join_username = var.domain_join_username
     domain_join_password = var.domain_join_password
     mysql_root_password  = var.mysql_root_password
+    samba_password       = var.samba_password
   })
 }

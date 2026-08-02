@@ -135,6 +135,7 @@ module "secrets" {
   domain_join_username = var.domain_join_username
   domain_join_password = var.domain_join_password
   mysql_root_password  = var.mysql_root_password
+  samba_password       = var.samba_password
   set_secret           = var.populate_ansible_secret
 }
 
@@ -156,7 +157,7 @@ module "ansible_control" {
   vpc_id                    = module.network.vpc_id
   vpc_cidr                  = module.network.vpc_cidr
   subnet_id                 = module.network.management_subnet_ids[0]
-  bastion_security_group_id = module.bastion.security_group_id
+  bastion_security_group_id = local.linux_bastion_sg_id
   key_name                  = module.keypair.key_name
   instance_type             = var.ansible_control_instance_type
   repo_volume_size          = var.ansible_repo_volume_size
@@ -175,6 +176,7 @@ module "ansible_control" {
 
 module "bastion" {
   source = "./modules/bastion"
+  count  = var.enable_linux_bastion ? 1 : 0
 
   name_prefix           = module.naming.base_name
   suffix                = local.stack_suffix
@@ -187,6 +189,35 @@ module "bastion" {
   bastion_allowed_cidrs = var.bastion_allowed_cidrs
   iam_instance_profile  = module.deployment.instance_profile_name
   kms_key_id            = local.ebs_kms_key_id
+}
+
+# Optional Windows Server jump host for RDP into the Windows estate. Additive and
+# independent of the Linux bastion; tagged OS=bastion so Ansible never targets it.
+module "bastion_windows" {
+  source = "./modules/bastion-windows"
+  count  = var.enable_windows_bastion ? 1 : 0
+
+  name_prefix           = module.naming.base_name
+  suffix                = local.stack_suffix
+  tags                  = module.naming.tags
+  vpc_id                = module.network.vpc_id
+  subnet_id             = module.network.public_subnet_ids[0]
+  instance_type         = var.windows_bastion_instance_type
+  ami_ssm_parameter     = var.windows_ami_ssm_parameter
+  bastion_allowed_cidrs = var.bastion_allowed_cidrs
+  admin_username        = var.windows_admin_username
+  admin_password        = var.windows_admin_password
+  iam_instance_profile  = module.deployment.instance_profile_name
+  kms_key_id            = local.ebs_kms_key_id
+}
+
+# Bastion-derived values, resolved once so consumers tolerate a disabled bastion.
+locals {
+  linux_bastion_sg_id       = var.enable_linux_bastion ? module.bastion[0].security_group_id : null
+  linux_bastion_private_ip  = var.enable_linux_bastion ? module.bastion[0].private_ip : null
+  linux_bastion_public_ip   = var.enable_linux_bastion ? module.bastion[0].public_ip : null
+  linux_bastion_public_dns  = var.enable_linux_bastion ? module.bastion[0].public_dns : null
+  linux_bastion_instance_id = var.enable_linux_bastion ? module.bastion[0].instance_id : null
 }
 
 #############################
@@ -204,7 +235,7 @@ module "compute_linux" {
   subnet_ids                = module.network.private_app_subnet_ids
   key_name                  = module.keypair.key_name
   iam_instance_profile      = module.deployment.instance_profile_name
-  bastion_security_group_id      = module.bastion.security_group_id
+  bastion_security_group_id      = local.linux_bastion_sg_id
   control_security_group_id      = local.control_security_group_id
   kms_key_id                     = local.ebs_kms_key_id
   instance_type                  = var.linux_instance_type
@@ -228,7 +259,7 @@ module "compute_windows" {
   vpc_cidr                  = module.network.vpc_cidr
   subnet_ids                = module.network.private_app_subnet_ids
   iam_instance_profile      = module.deployment.instance_profile_name
-  bastion_security_group_id = module.bastion.security_group_id
+  bastion_security_group_id = local.linux_bastion_sg_id
   control_security_group_id = local.control_security_group_id
   kms_key_id                = local.ebs_kms_key_id
   instance_type             = var.windows_instance_type
@@ -255,7 +286,8 @@ module "dns" {
   # Merge bastion + all Linux + all Windows hosts. Adding an instance to the
   # compute maps auto-registers a record here.
   instance_records = merge(
-    { "bastion" = module.bastion.private_ip },
+    var.enable_linux_bastion ? { "bastion" = local.linux_bastion_private_ip } : {},
+    var.enable_windows_bastion ? { "winbastion" = module.bastion_windows[0].private_ip } : {},
     module.compute_linux.dns_records,
     module.compute_windows.dns_records,
     local.ansible_dns_records,
@@ -269,14 +301,14 @@ module "dns" {
 locals {
   # Linux-family hosts: bastion + (optional) control node + Linux servers.
   conn_linux_hosts = concat(
-    [{
+    var.enable_linux_bastion ? [{
       name        = "${module.naming.base_name}-bastion-${local.stack_suffix}"
-      instance_id = module.bastion.instance_id
+      instance_id = local.linux_bastion_instance_id
       subnet_id   = module.network.public_subnet_ids[0]
-      private_ip  = module.bastion.private_ip
-      public_ip   = module.bastion.public_ip
+      private_ip  = local.linux_bastion_private_ip
+      public_ip   = local.linux_bastion_public_ip
       username    = "ubuntu"
-    }],
+    }] : [],
     var.enable_ansible_control ? [{
       name        = "${module.naming.base_name}-ansible-control-${local.stack_suffix}"
       instance_id = module.ansible_control[0].instance_id
@@ -295,13 +327,22 @@ locals {
     }],
   )
 
-  conn_windows_hosts = [for k, d in module.compute_windows.instances_detail : {
-    name        = d.name
-    instance_id = d.instance_id
-    subnet_id   = d.subnet_id
-    private_ip  = d.private_ip
-    public_ip   = d.public_ip
-  }]
+  conn_windows_hosts = concat(
+    var.enable_windows_bastion ? [{
+      name        = "${module.naming.base_name}-winbastion-${local.stack_suffix}"
+      instance_id = module.bastion_windows[0].instance_id
+      subnet_id   = module.network.public_subnet_ids[0]
+      private_ip  = module.bastion_windows[0].private_ip
+      public_ip   = module.bastion_windows[0].public_ip
+    }] : [],
+    [for k, d in module.compute_windows.instances_detail : {
+      name        = d.name
+      instance_id = d.instance_id
+      subnet_id   = d.subnet_id
+      private_ip  = d.private_ip
+      public_ip   = d.public_ip
+    }],
+  )
 }
 
 resource "local_file" "connection_details" {

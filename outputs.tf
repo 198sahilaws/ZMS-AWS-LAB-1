@@ -106,18 +106,28 @@ output "private_record_fqdns" {
 #############################
 
 output "bastion_public_ip" {
-  description = "Public IP of the bastion (SSH entry point)."
-  value       = module.bastion.public_ip
+  description = "Public IP of the Linux bastion (SSH entry point). Null when disabled."
+  value       = local.linux_bastion_public_ip
 }
 
 output "bastion_public_dns" {
-  description = "Public DNS of the bastion."
-  value       = module.bastion.public_dns
+  description = "Public DNS of the Linux bastion. Null when disabled."
+  value       = local.linux_bastion_public_dns
 }
 
 output "bastion_private_ip" {
-  description = "Private IP of the bastion."
-  value       = module.bastion.private_ip
+  description = "Private IP of the Linux bastion. Null when disabled."
+  value       = local.linux_bastion_private_ip
+}
+
+output "windows_bastion_public_ip" {
+  description = "Public IP of the Windows bastion (RDP entry point). Null when disabled."
+  value       = var.enable_windows_bastion ? module.bastion_windows[0].public_ip : null
+}
+
+output "windows_bastion_private_ip" {
+  description = "Private IP of the Windows bastion. Null when disabled."
+  value       = var.enable_windows_bastion ? module.bastion_windows[0].private_ip : null
 }
 
 #############################
@@ -158,16 +168,18 @@ output "windows_public_ips" {
 output "all_host_private_ips" {
   description = "Map of host => private IP for every instance (bastion, Linux, Windows)."
   value = merge(
-    { bastion = module.bastion.private_ip },
+    var.enable_linux_bastion ? { bastion = local.linux_bastion_private_ip } : {},
+    var.enable_windows_bastion ? { winbastion = module.bastion_windows[0].private_ip } : {},
     { for k, v in module.compute_linux.private_ips : "linux-${k}" => v },
     { for k, v in module.compute_windows.private_ips : "win-${k}" => v },
   )
 }
 
 output "all_host_public_ips" {
-  description = "Map of host => public IP. Only the bastion has one; private workloads are empty."
+  description = "Map of host => public IP. Only the bastions have one; private workloads are empty."
   value = merge(
-    { bastion = module.bastion.public_ip },
+    var.enable_linux_bastion ? { bastion = local.linux_bastion_public_ip } : {},
+    var.enable_windows_bastion ? { winbastion = module.bastion_windows[0].public_ip } : {},
     { for k, v in module.compute_linux.public_ips : "linux-${k}" => v },
     { for k, v in module.compute_windows.public_ips : "win-${k}" => v },
   )

@@ -10,7 +10,8 @@ locals {
     for idx, role in var.windows_server_roles : tostring(idx + 1) => {
       subnet_index = idx % local.az_count
       role         = role
-      is_dc        = role == "dc"
+      # Both a writable DC and a read-only DC are domain controllers.
+      is_dc = role == "dc" || role == "rodc"
     }
   }
 
@@ -77,12 +78,17 @@ resource "aws_security_group" "windows" {
   description = "Windows workloads: RDP from bastion/VPC only, never the internet"
   vpc_id      = var.vpc_id
 
-  ingress {
-    description     = "RDP from the bastion security group"
-    from_port       = 3389
-    to_port         = 3389
-    protocol        = "tcp"
-    security_groups = [var.bastion_security_group_id]
+  # RDP from the bastion SG (only when a bastion is deployed). RDP from within the
+  # VPC is allowed separately below, so a VNet-internal jump host still works.
+  dynamic "ingress" {
+    for_each = var.bastion_security_group_id != null ? [1] : []
+    content {
+      description     = "RDP from the bastion security group"
+      from_port       = 3389
+      to_port         = 3389
+      protocol        = "tcp"
+      security_groups = [var.bastion_security_group_id]
+    }
   }
 
   ingress {

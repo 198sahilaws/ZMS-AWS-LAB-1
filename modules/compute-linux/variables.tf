@@ -42,8 +42,9 @@ variable "iam_instance_profile" {
 }
 
 variable "bastion_security_group_id" {
-  description = "Bastion SG ID; Linux instances accept SSH (22) from this SG."
+  description = "Bastion SG ID; Linux instances accept SSH (22) from this SG. Null when no Linux bastion is deployed."
   type        = string
+  default     = null
 }
 
 variable "control_security_group_id" {

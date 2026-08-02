@@ -373,17 +373,17 @@ that server's **role**:
 | `ubuntu_server_roles` | Ubuntu 24.04 | `ubuntu_ami_ssm_parameter` | `["db", "web"]` |
 | `windows_server_roles` | Windows Server 2022 | `windows_ami_ssm_parameter` | `["dc", "web"]` |
 
-Roles are **lowercase canonical values** — `dc`, `web`, `db`, `fileserver`, `client` —
+Roles are **lowercase canonical values** — `dc`, `web`, `db`, `fileshare`, `client` —
 chosen so each becomes the `Role` tag and therefore the **`role_<value>`** Ansible
 inventory group (e.g. `Role=web` → group `role_web`), which is exactly what the control
-repo's playbooks target (`role_dc`, `role_web`, `role_db`, `role_fileserver`).
+repo's playbooks target (`role_dc`, `role_web`, `role_db`, `role_fileshare`).
 
 Each OS list is distributed across the chosen availability zones using **round robin**
 by list order: server *i* lands in AZ `i % number_of_azs`. For example,
-`windows_server_roles = ["dc", "web", "fileserver"]` with two AZs:
+`windows_server_roles = ["dc", "web", "fileshare"]` with two AZs:
 
 ```
-windows-1 (dc) → AZ-a    windows-2 (web) → AZ-b    windows-3 (fileserver) → AZ-a
+windows-1 (dc) → AZ-a    windows-2 (web) → AZ-b    windows-3 (fileshare) → AZ-a
 ```
 
 Instances are named `…-linux-amazon-1`, `…-windows-2`, etc.; the number of AZs is set by
@@ -637,7 +637,7 @@ requires. On Linux/macOS the equivalent is `chmod 600 <key_name>.pem`.
 
 Each `*_server_roles` list has one entry per server (length ≥ 2). With `N` entries and
 `A` AZs, server `i` (0-indexed) is placed in AZ `i % A`. Assign roles from the canonical
-set (`dc`, `web`, `db`, `fileserver`, `client`) so the `role_<value>` groups match the
+set (`dc`, `web`, `db`, `fileshare`, `client`) so the `role_<value>` groups match the
 control-repo playbooks.
 
 ---

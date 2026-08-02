@@ -37,8 +37,9 @@ variable "iam_instance_profile" {
 }
 
 variable "bastion_security_group_id" {
-  description = "Bastion SG ID; Windows instances accept RDP (3389) from this SG (in addition to the VPC range)."
+  description = "Bastion SG ID; Windows instances accept RDP (3389) from this SG (in addition to the VPC range). Null when no Linux bastion is deployed."
   type        = string
+  default     = null
 }
 
 variable "control_security_group_id" {
