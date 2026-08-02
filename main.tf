@@ -156,10 +156,11 @@ module "ansible_control" {
   tags                      = module.naming.tags
   vpc_id                    = module.network.vpc_id
   vpc_cidr                  = module.network.vpc_cidr
-  subnet_id                 = module.network.management_subnet_ids[0]
-  bastion_security_group_id = local.linux_bastion_sg_id
-  key_name                  = module.keypair.key_name
-  instance_type             = var.ansible_control_instance_type
+  subnet_id                         = module.network.management_subnet_ids[0]
+  bastion_security_group_id         = local.linux_bastion_sg_id
+  windows_bastion_security_group_id = local.windows_bastion_sg_id
+  key_name                          = module.keypair.key_name
+  instance_type                     = var.ansible_control_instance_type
   repo_volume_size          = var.ansible_repo_volume_size
   kms_key_id                = local.ebs_kms_key_id
   aws_region                = var.aws_region
@@ -218,6 +219,8 @@ locals {
   linux_bastion_public_ip   = var.enable_linux_bastion ? module.bastion[0].public_ip : null
   linux_bastion_public_dns  = var.enable_linux_bastion ? module.bastion[0].public_dns : null
   linux_bastion_instance_id = var.enable_linux_bastion ? module.bastion[0].instance_id : null
+  # The Windows bastion needs SSH (22) into the Linux hosts + control node.
+  windows_bastion_sg_id = var.enable_windows_bastion ? module.bastion_windows[0].security_group_id : null
 }
 
 #############################
@@ -235,10 +238,11 @@ module "compute_linux" {
   subnet_ids                = module.network.private_app_subnet_ids
   key_name                  = module.keypair.key_name
   iam_instance_profile      = module.deployment.instance_profile_name
-  bastion_security_group_id      = local.linux_bastion_sg_id
-  control_security_group_id      = local.control_security_group_id
-  kms_key_id                     = local.ebs_kms_key_id
-  instance_type                  = var.linux_instance_type
+  bastion_security_group_id         = local.linux_bastion_sg_id
+  windows_bastion_security_group_id = local.windows_bastion_sg_id
+  control_security_group_id         = local.control_security_group_id
+  kms_key_id                        = local.ebs_kms_key_id
+  instance_type                     = var.linux_instance_type
   amazon_linux_server_roles      = var.amazon_linux_server_roles
   ubuntu_server_roles            = var.ubuntu_server_roles
   amazon_linux_ami_ssm_parameter = var.amazon_linux_ami_ssm_parameter

@@ -38,6 +38,18 @@ resource "aws_security_group" "control" {
     }
   }
 
+  # Admin SSH from the Windows bastion SG (only when the Windows bastion is deployed).
+  dynamic "ingress" {
+    for_each = var.windows_bastion_security_group_id != null ? [1] : []
+    content {
+      description     = "Admin SSH from the Windows bastion security group"
+      from_port       = 22
+      to_port         = 22
+      protocol        = "tcp"
+      security_groups = [var.windows_bastion_security_group_id]
+    }
+  }
+
   egress {
     description = "All egress (push to managed hosts, pull repos via NAT, reach SSM endpoints)"
     from_port   = 0

@@ -47,6 +47,12 @@ variable "bastion_security_group_id" {
   default     = null
 }
 
+variable "windows_bastion_security_group_id" {
+  description = "Windows bastion SG ID; Linux instances accept SSH (22) from this SG too. Null when no Windows bastion is deployed."
+  type        = string
+  default     = null
+}
+
 variable "control_security_group_id" {
   description = "Ansible control-node SG ID. When set, Linux instances also accept SSH (22) from it (push). Null disables."
   type        = string

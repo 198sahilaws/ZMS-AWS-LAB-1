@@ -41,15 +41,27 @@ resource "aws_security_group" "linux" {
   description = "Linux workloads: SSH from bastion only, egress within VPC"
   vpc_id      = var.vpc_id
 
-  # SSH from the bastion SG (only when a bastion is deployed).
+  # SSH from the Linux bastion SG (only when a Linux bastion is deployed).
   dynamic "ingress" {
     for_each = var.bastion_security_group_id != null ? [1] : []
     content {
-      description     = "SSH from the bastion security group"
+      description     = "SSH from the Linux bastion security group"
       from_port       = 22
       to_port         = 22
       protocol        = "tcp"
       security_groups = [var.bastion_security_group_id]
+    }
+  }
+
+  # SSH from the Windows bastion SG (only when the Windows bastion is deployed).
+  dynamic "ingress" {
+    for_each = var.windows_bastion_security_group_id != null ? [1] : []
+    content {
+      description     = "SSH from the Windows bastion security group"
+      from_port       = 22
+      to_port         = 22
+      protocol        = "tcp"
+      security_groups = [var.windows_bastion_security_group_id]
     }
   }
 

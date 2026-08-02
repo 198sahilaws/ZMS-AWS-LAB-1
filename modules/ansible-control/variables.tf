@@ -36,6 +36,12 @@ variable "bastion_security_group_id" {
   default     = null
 }
 
+variable "windows_bastion_security_group_id" {
+  description = "Windows bastion SG ID; the control node accepts admin SSH from it too. Null when no Windows bastion is deployed."
+  type        = string
+  default     = null
+}
+
 variable "key_name" {
   description = "EC2 key pair name for admin SSH to the control node."
   type        = string
