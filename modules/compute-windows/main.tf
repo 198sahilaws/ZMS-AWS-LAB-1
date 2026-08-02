@@ -18,49 +18,91 @@ locals {
   # First-boot PowerShell: ensure the SSM agent is running, set the local admin
   # account, and stand up a WinRM HTTPS listener on 5986 so the host is
   # immediately manageable by Ansible (ntlm transport over TLS).
+  # IMPORTANT: this script must NEVER abort before the local admin account exists.
+  # EC2Launch v2 on Windows Server 2016+ stands up its OWN WinRM HTTPS listener on
+  # 5986, so if this script dies early the port still answers while the account is
+  # missing — Ansible then fails with the misleading
+  #   "ntlm: the specified credentials were rejected by the server"
+  # on every fresh deploy. The previous version set $ErrorActionPreference="Stop"
+  # globally, so a single hiccup (e.g. the SSM service already in a transitional
+  # state) silently skipped account creation. Each stage is now wrapped in
+  # try/catch, the account is created FIRST, and errors are logged, not fatal.
   user_data = <<-POWERSHELL
     <powershell>
     Start-Transcript -Path "C:\Windows\Temp\winrm-bootstrap.log" -Append
-    $ErrorActionPreference = "Stop"
+    $ErrorActionPreference = "Continue"
 
-    # --- SSM agent (Session Manager access) ---
-    Set-Service -Name AmazonSSMAgent -StartupType Automatic
-    Start-Service AmazonSSMAgent
-
-    # --- Local admin account used by Ansible over WinRM ---
-    $User = "${var.windows_admin_username}"
-    $Pass = ConvertTo-SecureString "${var.windows_admin_password}" -AsPlainText -Force
-    if (Get-LocalUser -Name $User -ErrorAction SilentlyContinue) {
-      Set-LocalUser -Name $User -Password $Pass
-    } else {
-      New-LocalUser -Name $User -Password $Pass -PasswordNeverExpires -AccountNeverExpires
-      Add-LocalGroupMember -Group "Administrators" -Member $User
+    # --- 1. Local admin account used by Ansible over WinRM (FIRST: most critical) --
+    # Single-quoted PowerShell literals so passwords containing $ ` or " are safe.
+    $User = '${var.windows_admin_username}'
+    $Pass = ConvertTo-SecureString '${var.windows_admin_password}' -AsPlainText -Force
+    try {
+      if (Get-LocalUser -Name $User -ErrorAction SilentlyContinue) {
+        Write-Output "Account $User exists - resetting password"
+        Set-LocalUser -Name $User -Password $Pass -PasswordNeverExpires $true
+      } else {
+        Write-Output "Creating account $User"
+        New-LocalUser -Name $User -Password $Pass -PasswordNeverExpires -AccountNeverExpires
+      }
+      Enable-LocalUser -Name $User
+      # Always (re)assert Administrators membership - previously this ran only on
+      # the create path, so an existing-but-non-admin account stayed unusable.
+      if (-not (Get-LocalGroupMember -Group 'Administrators' -Member $User -ErrorAction SilentlyContinue)) {
+        Add-LocalGroupMember -Group 'Administrators' -Member $User
+      }
+      Write-Output "Local admin account ready: $User"
+    } catch {
+      Write-Output "ERROR configuring local admin account: $($_.Exception.Message)"
     }
 
-    # --- Enable WinRM over HTTPS (5986) for Ansible ---
-    # Base remoting first. -SkipNetworkProfileCheck is required because EC2's NIC
-    # starts on the "Public" profile, which otherwise blocks WinRM setup.
-    Enable-PSRemoting -Force -SkipNetworkProfileCheck
-    Set-Service -Name WinRM -StartupType Automatic
+    # Local (non-domain) accounts are blocked from remote admin by UAC token
+    # filtering; this is required for WinRM/NTLM administration to work.
+    try {
+      New-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System' `
+        -Name 'LocalAccountTokenFilterPolicy' -Value 1 -PropertyType DWord -Force | Out-Null
+    } catch { Write-Output "ERROR setting LocalAccountTokenFilterPolicy: $($_.Exception.Message)" }
 
-    # Self-signed server-authentication certificate for the HTTPS listener.
-    $cert = New-SelfSignedCertificate -DnsName $env:COMPUTERNAME -CertStoreLocation Cert:\LocalMachine\My
+    # --- 2. SSM agent (Session Manager access; non-fatal) ------------------------
+    try {
+      Set-Service -Name AmazonSSMAgent -StartupType Automatic
+      Start-Service AmazonSSMAgent
+    } catch { Write-Output "ERROR starting SSM agent: $($_.Exception.Message)" }
 
-    # (Re)create the HTTPS listener on 5986 bound to that certificate.
-    Get-ChildItem WSMan:\localhost\Listener | Where-Object { $_.Keys -contains "Transport=HTTPS" } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-    New-Item -Path WSMan:\localhost\Listener -Transport HTTPS -Address * -CertificateThumbPrint $cert.Thumbprint -Force
+    # --- 3. WinRM over HTTPS (5986) for Ansible ---------------------------------
+    # -SkipNetworkProfileCheck is required because EC2's NIC starts on the "Public"
+    # profile, which otherwise blocks WinRM setup.
+    try {
+      Enable-PSRemoting -Force -SkipNetworkProfileCheck
+      Set-Service -Name WinRM -StartupType Automatic
+    } catch { Write-Output "ERROR enabling PSRemoting: $($_.Exception.Message)" }
+
+    try {
+      $cert = New-SelfSignedCertificate -DnsName $env:COMPUTERNAME -CertStoreLocation Cert:\LocalMachine\My
+      Get-ChildItem WSMan:\localhost\Listener | Where-Object { $_.Keys -contains "Transport=HTTPS" } | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+      New-Item -Path WSMan:\localhost\Listener -Transport HTTPS -Address * -CertificateThumbPrint $cert.Thumbprint -Force
+    } catch { Write-Output "ERROR creating HTTPS listener: $($_.Exception.Message)" }
 
     # Require encryption; keep Negotiate/NTLM enabled (Ansible's ntlm transport).
-    Set-Item -Path WSMan:\localhost\Service\Auth\Negotiate -Value $true
-    Set-Item -Path WSMan:\localhost\Service\AllowUnencrypted -Value $false
-
-    # Raise the per-shell memory ceiling so Ansible PowerShell modules don't OOM.
-    try { Set-Item -Path WSMan:\localhost\Shell\MaxMemoryPerShellMB -Value 2048 } catch {}
+    try {
+      Set-Item -Path WSMan:\localhost\Service\Auth\Negotiate -Value $true
+      Set-Item -Path WSMan:\localhost\Service\AllowUnencrypted -Value $false
+      Set-Item -Path WSMan:\localhost\Shell\MaxMemoryPerShellMB -Value 2048
+    } catch { Write-Output "ERROR setting WSMan options: $($_.Exception.Message)" }
 
     # Allow 5986 inbound at the OS firewall (the security group limits the source).
-    New-NetFirewallRule -DisplayName "WinRM HTTPS 5986" -Direction Inbound -LocalPort 5986 -Protocol TCP -Action Allow -ErrorAction SilentlyContinue
+    try {
+      New-NetFirewallRule -DisplayName "WinRM HTTPS 5986" -Direction Inbound -LocalPort 5986 -Protocol TCP -Action Allow -ErrorAction SilentlyContinue
+    } catch { Write-Output "ERROR adding firewall rule: $($_.Exception.Message)" }
 
-    Restart-Service WinRM
+    try { Restart-Service WinRM } catch { Write-Output "ERROR restarting WinRM: $($_.Exception.Message)" }
+
+    # --- 4. Self-verification: prove the account exists and is an administrator ---
+    Write-Output "=== BOOTSTRAP VERIFICATION ==="
+    Get-LocalUser -Name $User | Format-List Name,Enabled,PasswordExpires
+    Get-LocalGroupMember -Group 'Administrators' | Format-Table Name
+    Get-ChildItem WSMan:\localhost\Listener | ForEach-Object { $_.Keys }
+    Write-Output "=== END VERIFICATION ==="
+
     Stop-Transcript
     </powershell>
     <persist>false</persist>
