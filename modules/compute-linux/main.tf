@@ -93,6 +93,14 @@ resource "aws_security_group" "linux" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  egress {
+    description = "HTTP egress for apt/package mirrors via NAT (Ubuntu apt uses port 80)"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
   tags = merge(var.tags, { Name = "${var.name_prefix}-linux-sg${local.sfx}" })
 }
 

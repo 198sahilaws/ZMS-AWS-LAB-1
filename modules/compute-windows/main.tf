@@ -127,6 +127,14 @@ resource "aws_security_group" "windows" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  egress {
+    description = "HTTP egress for Windows Update / Chocolatey mirrors via NAT (port 80)"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
   tags = merge(var.tags, { Name = "${var.name_prefix}-windows-sg${local.sfx}" })
 }
 
