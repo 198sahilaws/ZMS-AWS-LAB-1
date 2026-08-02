@@ -22,36 +22,23 @@ data "aws_subnet" "selected" {
 
 resource "aws_security_group" "control" {
   name        = "${var.name_prefix}-ansible-control-sg${local.sfx}"
-  description = "Ansible control node: admin SSH from bastion; egress to managed hosts and repos"
+  description = "Ansible control node: all inbound from the VPC, all outbound"
   vpc_id      = var.vpc_id
 
-  # Admin SSH from the bastion SG (only when a bastion is deployed; otherwise the
-  # control node is reachable via SSM Session Manager).
-  dynamic "ingress" {
-    for_each = var.bastion_security_group_id != null ? [1] : []
-    content {
-      description     = "Admin SSH from the bastion security group"
-      from_port       = 22
-      to_port         = 22
-      protocol        = "tcp"
-      security_groups = [var.bastion_security_group_id]
-    }
-  }
-
-  # Admin SSH from the Windows bastion SG (only when the Windows bastion is deployed).
-  dynamic "ingress" {
-    for_each = var.windows_bastion_security_group_id != null ? [1] : []
-    content {
-      description     = "Admin SSH from the Windows bastion security group"
-      from_port       = 22
-      to_port         = 22
-      protocol        = "tcp"
-      security_groups = [var.windows_bastion_security_group_id]
-    }
+  # Allow ALL inbound from within the VPC (every subnet range): admin SSH from a
+  # bastion, etc. Non-VPC inbound is dropped by the default deny; the control node
+  # has no public IP and is also reachable via SSM Session Manager. The bastions
+  # keep their own admin-CIDR-locked SGs and are excluded from this rule.
+  ingress {
+    description = "All inbound from within the VPC"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = [var.vpc_cidr]
   }
 
   egress {
-    description = "All egress (push to managed hosts, pull repos via NAT, reach SSM endpoints)"
+    description = "All outbound to anywhere (push to managed hosts, pull repos, reach AWS endpoints)"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"

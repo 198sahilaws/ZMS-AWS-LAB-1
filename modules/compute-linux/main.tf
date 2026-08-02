@@ -38,47 +38,16 @@ data "aws_ssm_parameter" "ami" {
 # Linux workloads accept SSH from the bastion SG and (when set) the control SG.
 resource "aws_security_group" "linux" {
   name        = "${var.name_prefix}-linux-sg${local.sfx}"
-  description = "Linux workloads: SSH from bastion only, egress within VPC"
+  description = "Linux workloads: all inbound from the VPC, all outbound"
   vpc_id      = var.vpc_id
 
-  # SSH from the Linux bastion SG (only when a Linux bastion is deployed).
-  dynamic "ingress" {
-    for_each = var.bastion_security_group_id != null ? [1] : []
-    content {
-      description     = "SSH from the Linux bastion security group"
-      from_port       = 22
-      to_port         = 22
-      protocol        = "tcp"
-      security_groups = [var.bastion_security_group_id]
-    }
-  }
-
-  # SSH from the Windows bastion SG (only when the Windows bastion is deployed).
-  dynamic "ingress" {
-    for_each = var.windows_bastion_security_group_id != null ? [1] : []
-    content {
-      description     = "SSH from the Windows bastion security group"
-      from_port       = 22
-      to_port         = 22
-      protocol        = "tcp"
-      security_groups = [var.windows_bastion_security_group_id]
-    }
-  }
-
-  # Ansible push path: SSH from the control node SG (only when provided).
-  dynamic "ingress" {
-    for_each = var.control_security_group_id != null ? [1] : []
-    content {
-      description     = "SSH from the Ansible control node"
-      from_port       = 22
-      to_port         = 22
-      protocol        = "tcp"
-      security_groups = [var.control_security_group_id]
-    }
-  }
-
-  egress {
-    description = "Egress to the VPC (reach VPC endpoints / other hosts)"
+  # Allow ALL inbound from within the VPC (every subnet range). This covers the
+  # control node's SSH push, bastion access, and host-to-host traffic without
+  # per-port rules. Non-VPC inbound is dropped by the default deny. The bastions
+  # are NOT in this group — they keep their own internet-facing, admin-CIDR-locked
+  # SGs, so they are excluded from this permissive rule.
+  ingress {
+    description = "All inbound from within the VPC"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
@@ -86,18 +55,10 @@ resource "aws_security_group" "linux" {
   }
 
   egress {
-    description = "HTTPS egress for package mirrors via NAT"
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  egress {
-    description = "HTTP egress for apt/package mirrors via NAT (Ubuntu apt uses port 80)"
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
+    description = "All outbound to anywhere"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
 

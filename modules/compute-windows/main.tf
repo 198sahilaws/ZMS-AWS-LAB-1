@@ -75,44 +75,15 @@ data "aws_ssm_parameter" "ami" {
 # Windows workloads accept RDP from the bastion/VPC and WinRM from the control SG.
 resource "aws_security_group" "windows" {
   name        = "${var.name_prefix}-windows-sg${local.sfx}"
-  description = "Windows workloads: RDP from bastion/VPC only, never the internet"
+  description = "Windows workloads: all inbound from the VPC, all outbound"
   vpc_id      = var.vpc_id
 
-  # RDP from the bastion SG (only when a bastion is deployed). RDP from within the
-  # VPC is allowed separately below, so a VNet-internal jump host still works.
-  dynamic "ingress" {
-    for_each = var.bastion_security_group_id != null ? [1] : []
-    content {
-      description     = "RDP from the bastion security group"
-      from_port       = 3389
-      to_port         = 3389
-      protocol        = "tcp"
-      security_groups = [var.bastion_security_group_id]
-    }
-  }
-
+  # Allow ALL inbound from within the VPC (every subnet range): RDP, WinRM (5986)
+  # from the control node, AD/DNS host-to-host, etc. — without per-port rules.
+  # Non-VPC inbound is dropped by the default deny. The bastions are NOT in this
+  # group (they keep their own admin-CIDR-locked SGs), so they are excluded.
   ingress {
-    description = "RDP from within the VPC"
-    from_port   = 3389
-    to_port     = 3389
-    protocol    = "tcp"
-    cidr_blocks = [var.vpc_cidr]
-  }
-
-  # Ansible push path: WinRM HTTPS from the control node SG (only when provided).
-  dynamic "ingress" {
-    for_each = var.control_security_group_id != null ? [1] : []
-    content {
-      description     = "WinRM HTTPS from the Ansible control node"
-      from_port       = 5986
-      to_port         = 5986
-      protocol        = "tcp"
-      security_groups = [var.control_security_group_id]
-    }
-  }
-
-  egress {
-    description = "Egress to the VPC (reach VPC endpoints / other hosts)"
+    description = "All inbound from within the VPC"
     from_port   = 0
     to_port     = 0
     protocol    = "-1"
@@ -120,18 +91,10 @@ resource "aws_security_group" "windows" {
   }
 
   egress {
-    description = "HTTPS egress for updates / package mirrors via NAT"
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  egress {
-    description = "HTTP egress for Windows Update / Chocolatey mirrors via NAT (port 80)"
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
+    description = "All outbound to anywhere"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
